@@ -6,7 +6,7 @@ use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
 };
-
+use crate::client_danylo::client::Client;
 use crate::general_use::{ClientCommand, ClientEvent, Query};
 
 pub struct ClientDanylo {
@@ -24,8 +24,8 @@ pub struct ClientDanylo {
     fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,       // Queue of fragments to be reassembled for different sessions
 }
 
-impl ClientDanylo {
-    pub fn new(
+impl Client for ClientDanylo {
+    fn new(
         id: NodeId,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
@@ -48,7 +48,7 @@ impl ClientDanylo {
         }
     }
 
-    pub fn run(&mut self) {
+    fn run(&mut self) {
         loop {
             select_biased! {
                 recv(self.controller_recv) -> command_res => {
@@ -64,8 +64,10 @@ impl ClientDanylo {
             }
         }
     }
+}
 
-    /// ###### Handles incoming packets and dispatches them to the appropriate handler based on the packet type.
+impl ClientDanylo {
+/// ###### Handles incoming packets and dispatches them to the appropriate handler based on the packet type.
     ///
     /// ###### Arguments
     /// * `packet` - The incoming packet to be processed.
