@@ -11,22 +11,23 @@ use crate::{
         client::Client,
         message::Message,
     },
-    general_use::{ClientCommand, ClientEvent, Query},
+    general_use::{ClientCommand, ClientEvent, Query, ServerType},
 };
 
 pub struct ClientDanylo {
-    id: NodeId,                                                 // Client ID
-    packet_send: HashMap<NodeId, Sender<Packet>>,               // Neighbor's packet sender channels
-    packet_recv: Receiver<Packet>,                              // Packet receiver channel
-    controller_send: Sender<ClientEvent>,                       // Event sender channel
-    controller_recv: Receiver<ClientCommand>,                   // Command receiver channel
-    session_ids: Vec<u64>,                                      // Used session IDs
-    flood_ids: Vec<u64>,                                        // Used flood IDs
-    floods: HashMap<NodeId, HashSet<u64>>,                      // Flood initiators and their flood IDs
-    topology: HashMap<NodeId, HashSet<NodeId>>,                 // Nodes and their neighbours
-    routes: HashMap<NodeId, Vec<NodeId>>,                       // Routes to the servers
-    messages_to_send: HashMap<u64, Message>,                    // Queue of messages to be sent for different sessions
-    fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,       // Queue of fragments to be reassembled for different sessions
+    id: NodeId,                                             // Client ID
+    packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
+    packet_recv: Receiver<Packet>,                          // Packet receiver channel
+    controller_send: Sender<ClientEvent>,                   // Event sender channel
+    controller_recv: Receiver<ClientCommand>,               // Command receiver channel
+    server_ids: HashMap<NodeId, Option<ServerType>>,        // IDs of the available servers and their
+    session_ids: Vec<u64>,                                  // Used session IDs
+    flood_ids: Vec<u64>,                                    // Used flood IDs
+    floods: HashMap<NodeId, HashSet<u64>>,                  // Flood initiators and their flood IDs
+    topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
+    routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
+    messages_to_send: HashMap<u64, Message>,                // Queue of messages to be sent for different sessions
+    fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 }
 
 impl Client for ClientDanylo {
@@ -43,6 +44,7 @@ impl Client for ClientDanylo {
             packet_recv,
             controller_send,
             controller_recv,
+            server_ids: HashMap::new(),
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
             floods: HashMap::new(),
@@ -451,6 +453,13 @@ impl ClientDanylo {
             let current = path[i].0;
             let next = path[i + 1].0;
 
+            if path[i].1 == NodeType::Server {
+                self.server_ids.insert(current, None);
+            }
+            if path[i + 1].1 == NodeType::Server {
+                self.server_ids.insert(next, None);
+            }
+
             // Add the connection between the current and next node in both directions.
             self.topology
                 .entry(current)
@@ -466,9 +475,14 @@ impl ClientDanylo {
 
     /// ###### Initiates a discovery process by sending a flood request to all neighboring nodes.
     ///
-    /// This method generates a new flood ID, creates a flood request, and sends it to all available neighbors.
-    /// It also generates a new session ID for the discovery process and logs any errors if the request fails to be sent.
+    /// This method clears the current topology and server IDs, generates a new flood ID, creates a flood request,
+    /// and sends it to all available neighbors. It also generates a new session ID for the discovery process
+    /// and logs any errors if the request fails to be sent.
     fn discovery(&mut self) {
+        // Clear the current topology and server IDs.
+        self.topology.clear();
+        self.server_ids.clear();
+
         // Generate a new flood ID, incrementing the last one or starting at 1 if none exists.
         let flood_id = self.flood_ids.last().map_or(1, |last| last + 1);
         self.flood_ids.push(flood_id);
@@ -498,6 +512,7 @@ impl ClientDanylo {
             }
         }
     }
+
 
     /// ###### Sends a request to a server asking for its type.
     ///
