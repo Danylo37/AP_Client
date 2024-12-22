@@ -8,9 +8,10 @@ use wg_2024::{
 
 use crate::general_use::{ClientCommand, ClientEvent};
 
-pub trait Client {
+pub trait ChatClient {
     fn new(
         id: NodeId,
+        name: String,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
