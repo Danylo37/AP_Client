@@ -7,7 +7,7 @@ use wg_2024::{
 
 /// ###### Represents a message that is fragmented into smaller pieces for transmission.
 pub struct Message {
-    fragments_to_send: Vec<Fragment>,
+    fragments: Vec<Fragment>,
     last_fragment_index: usize,
     session_id: u64,
     route: Vec<NodeId>,
@@ -21,7 +21,7 @@ impl Message {
     /// * `route` - The sequence of nodes the message will traverse.
     pub fn new(session_id: u64, route: Vec<NodeId>) -> Message {
         Self {
-            fragments_to_send: Vec::new(),
+            fragments: Vec::new(),
             last_fragment_index: 0,
             session_id,
             route,
@@ -44,7 +44,7 @@ impl Message {
             Err(_) => return false,
         };
 
-        self.fragments_to_send = self.fragment(&serialized_message);
+        self.fragments = self.fragment(&serialized_message);
         true
     }
 
@@ -86,7 +86,7 @@ impl Message {
     /// ###### Returns
     /// An `Option<Packet>` containing the packet if the fragment exists, or `None`.
     pub fn get_fragment_packet(&self, fragment_index: usize) -> Option<Packet> {
-        if let Some(fragment) = self.fragments_to_send.get(fragment_index).cloned() {
+        if let Some(fragment) = self.fragments.get(fragment_index).cloned() {
             let hops = self.route.clone();
             let routing_header = SourceRoutingHeader {
                 hop_index: 0,
