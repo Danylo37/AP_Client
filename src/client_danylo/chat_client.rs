@@ -1,11 +1,6 @@
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
-
-use wg_2024::{
-    network::NodeId,
-    packet::Packet,
-};
-
+use wg_2024::{network::NodeId, packet::Packet};
 use crate::general_use::{ClientCommand, ClientEvent};
 
 pub trait ChatClient {
