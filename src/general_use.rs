@@ -41,7 +41,7 @@ pub enum Query{
     //To Communication Server
     AddClient(String, NodeId),
     AskListClients,
-    SendMessageTo(String, Message),
+    SendMessageTo(String, String),
 
     //To Content Server
     //(Text)
@@ -58,7 +58,7 @@ pub enum Response {
     ServerType(ServerType),
 
     //From Communication Server
-    MessageFrom(String, Message),
+    MessageFrom(String, String),
     ListUsers(Vec<String>),
 
     //From Content Server
@@ -73,16 +73,9 @@ pub enum Response {
 }
 
 ///Material
-#[derive(Deserialize, Serialize, Copy, Clone, Debug)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq)]
 pub enum ServerType {
     Communication,
     Text,
     Media,
 }
-
-
-#[derive(Deserialize, Serialize, Clone, Debug)]
-pub struct Message {
-    text: String,
-}
-
