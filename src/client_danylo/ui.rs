@@ -1,6 +1,6 @@
 use std::{io, io::Write};
 use wg_2024::network::NodeId;
-use crate::client_danylo::client_danylo::ChatClientDanylo;
+use super::client_danylo::ChatClientDanylo;
 
 pub fn start_ui(mut client: ChatClientDanylo) {
     loop {
@@ -32,7 +32,6 @@ fn ask_input_user() -> i32 {
         }
     }
 }
-
 
 fn take_user_input_and_parse() -> i32 {
     let mut user_input = String::new();
@@ -71,15 +70,13 @@ fn send_query_menu(client: &mut ChatClientDanylo) {
 
         if user_choice > 0 && user_choice <= servers.len() as i32 {
             server_menu(servers[(user_choice-1) as usize]);
-            break
         } else if user_choice == last_option_number as i32 {
-            break
+            return;
         } else {
             println!("Not a valid option, please choose again.");
         }
     }
 }
-
 
 fn get_server_list(server_ids: &Vec<NodeId>) -> String {
     let mut list = "".to_string();
@@ -93,5 +90,72 @@ fn get_server_list(server_ids: &Vec<NodeId>) -> String {
 }
 
 fn server_menu(server_id: NodeId) {
-    println!("Server ID: {}", server_id);
+    loop {
+        println!("\nChoose an action:\n\
+                  1. Request server type\n\
+                  2. Request user's list\n\
+                  3. Send message\n\
+                  4. Return back");
+
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let user_choice = ask_input_user();
+
+        match user_choice {
+            1 => { request_server_type(server_id) }
+            2 => { request_users_list(server_id) }
+            3 => { send_message_menu(server_id) }
+            4 => return,
+            _ => println!("Not a valid option, please choose again."),
+        }
+    }
+}
+
+fn request_server_type(_server_id: NodeId) {
+    // Add logic for requesting server type
+    println!("Requesting server type");
+}
+
+fn request_users_list(_server_id: NodeId) {
+    // Add logic for requesting user's list
+    println!("Requesting user's list");
+}
+
+fn send_message_menu(server_id: NodeId) {
+    let users = get_users_list(server_id);
+
+    if users.is_empty() {
+        println!("No users found. Please request the user list from the server.");
+        return;
+    }
+
+    println!("\nChoose a user to send a message:");
+    for (index, user) in users.iter().enumerate() {
+        println!("{}. {}", index + 1, user);
+    }
+    println!("{}: Return back", users.len() + 1);
+
+    print!("> ");
+    io::stdout().flush().unwrap();
+
+    let user_choice = ask_input_user();
+
+    if user_choice > 0 && user_choice <= users.len() as i32 {
+        send_message_to_user(users[(user_choice - 1) as usize].clone());
+    } else if user_choice == users.len() as i32 + 1 {
+        return;
+    } else {
+        println!("Not a valid option, please choose again.");
+    }
+}
+
+fn get_users_list(_server_id: NodeId) -> Vec<String> {
+    // Add logic to retrieve users from the server
+    vec!["User1".to_string(), "User2".to_string()] // Placeholder
+}
+
+fn send_message_to_user(user: String) {
+    println!("Sending message to {}", user);
+    // Add logic for sending a message to the user
 }
