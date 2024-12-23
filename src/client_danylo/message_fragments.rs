@@ -6,20 +6,20 @@ use wg_2024::{
 };
 
 /// ###### Represents a message that is fragmented into smaller pieces for transmission.
-pub struct Message {
+pub struct MessageFragments {
     fragments: Vec<Fragment>,
     last_fragment_index: usize,
     session_id: u64,
     route: Vec<NodeId>,
 }
 
-impl Message {
+impl MessageFragments {
     /// ###### Creates a new `Message` with the given session ID and route.
     ///
     /// ###### Arguments
     /// * `session_id` - A unique identifier for the session.
     /// * `route` - The sequence of nodes the message will traverse.
-    pub fn new(session_id: u64, route: Vec<NodeId>) -> Message {
+    pub fn new(session_id: u64, route: Vec<NodeId>) -> MessageFragments {
         Self {
             fragments: Vec::new(),
             last_fragment_index: 0,
