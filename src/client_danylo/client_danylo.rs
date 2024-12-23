@@ -12,9 +12,9 @@ use wg_2024::{
 use crate::{
     client_danylo::{
         chat_client::ChatClient,
-        message::Message,
+        message_fragments::MessageFragments,
     },
-    general_use::{ClientCommand, ClientEvent, Query, ServerType, Response},
+    general_use::{ClientCommand, ClientEvent, Query, ServerType, Response, Message},
 };
 
 pub struct ChatClientDanylo {
@@ -31,8 +31,9 @@ pub struct ChatClientDanylo {
     pub floods: HashMap<NodeId, HashSet<u64>>,                  // Flood initiators and their flood IDs
     pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
     pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
-    pub messages_to_send: HashMap<u64, Message>,                // Queue of messages to be sent for different sessions
+    pub messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
     pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    pub inbox: HashMap<String, HashSet<Message>>,               // Received messages
 }
 
 impl ChatClient for ChatClientDanylo {
@@ -60,6 +61,7 @@ impl ChatClient for ChatClientDanylo {
             routes: HashMap::new(),
             messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
+            inbox: HashMap::new(),
         }
     }
 
@@ -82,7 +84,7 @@ impl ChatClient for ChatClientDanylo {
 }
 
 impl ChatClientDanylo {
-/// ###### Handles incoming packets and dispatches them to the appropriate handler based on the packet type.
+    /// ###### Handles incoming packets and dispatches them to the appropriate handler based on the packet type.
     ///
     /// ###### Arguments
     /// * `packet` - The incoming packet to be processed.
@@ -300,17 +302,19 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Handles and prints a message received from a specified sender.
+    /// ###### TODO
     ///
     /// ###### Arguments
     ///
     /// * `from` - A `String` representing the sender of the message.
     /// * `message` - A `String` containing the content of the message.
     ///
-    /// This function prints the sender's name followed by the message content to the console.
-    fn handle_message(&self, from: String, message: String) {
-        println!("Message from {}", from);
-        println!("{}", message);
+    /// TODO
+    fn handle_message(&mut self, from: String, message: Message) {
+        self.inbox
+            .entry(from)
+            .or_insert_with(HashSet::new)
+            .insert(message);
     }
 
     /// ###### Sends an Ack packet for a received fragment.
@@ -605,7 +609,7 @@ impl ChatClientDanylo {
     /// * `server_id` - The ID of the server handling the message.
     /// * `to` - The recipient of the message (client's name).
     /// * `message` - The content of the message to be sent.
-    pub fn send_message_to(&mut self, server_id: NodeId, to: String, message: String) {
+    pub fn send_message_to(&mut self, server_id: NodeId, to: String, message: Message) {
         self.create_and_send_message(Query::SendMessageTo(to, message), server_id);
     }
 
@@ -634,7 +638,7 @@ impl ChatClientDanylo {
         self.session_ids.push(session_id);
 
         // Create message (split the message into fragments) and send first fragment.
-        let mut message = Message::new(session_id, hops);
+        let mut message = MessageFragments::new(session_id, hops);
         if message.create_message_of(data) {
             self.send_to_next_hop(message.get_fragment_packet(0).unwrap());
         } else {
