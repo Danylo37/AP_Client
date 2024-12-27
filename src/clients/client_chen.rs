@@ -1,0 +1,1 @@
+pub type FloodId = u64;

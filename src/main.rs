@@ -4,6 +4,7 @@ use crate::client_danylo::{
 
 mod client_danylo;
 mod general_use;
+mod clients;
 
 fn main() {
     test_ui();
