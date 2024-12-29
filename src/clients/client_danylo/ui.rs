@@ -42,7 +42,7 @@ fn display_main_menu(client: &ChatClientDanylo) {
     if client.topology.is_empty() {
         println!("1. Discover the network");
     } else {
-        println!("1. Check inbox ({})", client.new_messages);
+        println!("1. Check inbox");
         println!("2. Send request to server");
     }
     println!("0. Exit");
@@ -93,9 +93,6 @@ fn discover_network(client: &mut ChatClientDanylo) {
 /// ###### Displays the inbox for the client and resets the new message counter.
 /// If the inbox is empty, notifies the user. Otherwise, displays each message.
 fn check_inbox(client: &mut ChatClientDanylo) {
-    // Reset the new message counter
-    client.new_messages = 0;
-
     println!("-------------------------\n");
     println!("--------- Inbox ---------");
 
@@ -340,7 +337,8 @@ fn handle_ask_users_list(client: &mut ChatClientDanylo, server_id: NodeId) {
 
 /// ###### Selects a client to send a message to and handles the message sending process.
 fn send_message(client: &mut ChatClientDanylo, server_id: NodeId) {
-    let clients = client.clients.clone();
+    let mut clients: Vec<NodeId> = client.clients.clone().into_iter().collect();
+    clients.sort();
 
     display_choose_user(&clients);
 
