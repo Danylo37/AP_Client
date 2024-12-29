@@ -28,11 +28,9 @@ pub fn test_ui() {
     c1.servers.insert(7, ServerType::Text);
     c1.servers.insert(8, ServerType::Undefined);
 
-    c1.clients.push(9);
-    c1.clients.push(10);
-    c1.clients.push(11);
-
-    c1.new_messages = 2;
+    c1.clients.insert(9);
+    c1.clients.insert(10);
+    c1.clients.insert(11);
 
     run_chat_client_ui(c1);
 }
