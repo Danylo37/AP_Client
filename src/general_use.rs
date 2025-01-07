@@ -1,5 +1,3 @@
-//I say i did a good job damn lillo
-
 use std::fmt::{Display, Formatter};
 use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
@@ -8,9 +6,16 @@ use wg_2024::{
     network::NodeId,
     packet::Packet,
 };
-use crate::clients::client_chen::FloodId;
 
 pub type Message = String;
+pub type File = String;
+pub type ServerId = NodeId;
+pub type ClientId = NodeId;
+pub type DroneId = NodeId;
+pub type SessionId = u64;
+pub type FloodId = u64;
+pub type FragmentIndex = u64;
+pub type UsingTimes = u64;  //to measure traffic of fragments in a path.
 
 ///packet sending status
 #[derive(Debug, Clone)]
@@ -25,19 +30,17 @@ pub enum NotSentType{
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "debug", derive(PartialEq))]
+pub enum Speaker{
+    Me,
+    HimOrHer,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "debug", derive(PartialEq))]
 pub enum PacketStatus{
     Sent,                   //Successfully sent packet, that is with ack received
     NotSent(NotSentType),   //Include the packet not successfully sent, that is nack received
     InProgress,             //When we have no ack or nack confirmation
-}
-
-///flood status
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "debug", derive(PartialEq))]
-pub enum FloodStatus{
-    InGoing,
-    Finished(FloodId),
 }
 
 /// From controller to Server
@@ -59,18 +62,25 @@ pub enum ClientCommand {
     AddSender(NodeId, Sender<Packet>),
 }
 
+
+#[derive(Debug)]
 pub enum ClientEvent {
     PacketSent(Packet),
+    SenderRemoved(NodeId),
+    SenderAdded(NodeId),
+    DoingFlood(FloodId),
+    FloodIsFinished(FloodId),
 }
 
 //Queries (Client -> Server)
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum Query {
     //Common-shared
     AskType,
 
     //To Communication Server
     RegisterClient(NodeId),
+    UnregisterClient(NodeId),
     AskListClients,
     SendMessageTo(NodeId, Message),
 
