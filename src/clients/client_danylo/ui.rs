@@ -36,10 +36,10 @@ impl<'a> ChatClientUI<'a> {
             }
 
             // Handle user choices based on topology state
-            match (self.client.topology.is_empty(), user_choice) {
-                (true, 1) => self.discover_network(),
-                (false, 1) => self.check_inbox(),
-                (false, 2) => self.send_request(),
+            match user_choice {
+                1 => self.check_inbox(),
+                2 => self.send_request(),
+                3 => self.discover_network(),
                 _ => {
                     println!("Invalid option. Please try again.");
                     continue;
@@ -56,12 +56,9 @@ impl<'a> ChatClientUI<'a> {
     /// The options depend on whether the client's topology is empty.
     fn display_main_menu(&self) {
         println!("\n------- Client {} --------", self.client.id);
-        if self.client.topology.is_empty() {
-            println!("1. Discover the network");
-        } else {
-            println!("1. Check inbox");
-            println!("2. Send request to server");
-        }
+        println!("1. Check inbox");
+        println!("2. Send request to server");
+        println!("3. Discover the network");
         println!("0. Exit");
     }
 
