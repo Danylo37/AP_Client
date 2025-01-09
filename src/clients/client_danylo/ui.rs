@@ -4,15 +4,15 @@ use crate::general_use::ServerType;
 use super::client_danylo::ChatClientDanylo;
 
 
-pub struct ChatClientUI {
-    client: ChatClientDanylo,
+pub struct ChatClientUI<'a> {
+    client: &'a mut ChatClientDanylo,
     current_server: NodeId,
     separator: String
 }
 
-impl ChatClientUI {
+impl<'a> ChatClientUI<'a> {
     /// ###### Creates a new `ChatClientUI` instance with the given client.
-    pub fn new(client: ChatClientDanylo) -> Self {
+    pub fn new(client: &'a mut ChatClientDanylo) -> Self {
         Self {
             client,
             current_server: 0,
@@ -29,11 +29,11 @@ impl ChatClientUI {
             // Get user input
             let user_choice = Self::ask_input_user();
 
-            // // Exit condition
-            // if user_choice == 0 {
-            //     println!("Exiting...");
-            //     break;
-            // }
+            // Exit condition
+            if user_choice == 0 {
+                println!("Exiting...");
+                break;
+            }
 
             // Handle user choices based on topology state
             match (self.client.topology.is_empty(), user_choice) {
@@ -49,7 +49,7 @@ impl ChatClientUI {
             // Display the menu after processing
             self.display_main_menu();
         }
-        // println!("{}", self.separator);
+        println!("{}", self.separator);
     }
 
     /// ###### Displays the main menu for the chat client.
@@ -62,7 +62,7 @@ impl ChatClientUI {
             println!("1. Check inbox");
             println!("2. Send request to server");
         }
-        // println!("0. Exit");
+        println!("0. Exit");
     }
 
     /// ###### Prompts the user for input and ensures valid numeric input is returned.
