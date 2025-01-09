@@ -15,7 +15,7 @@ use wg_2024::{
 };
 
 use crate::{
-    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerError, ServerType},
+    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
     clients::client::Client
 };
 use super::message_fragments::MessageFragments;
@@ -138,6 +138,30 @@ impl ChatClientDanylo {
                 self.packet_send.remove(&id);
                 info!("Removed sender for node {}", id);
             }
+            // -------------- for tests -------------- \\
+            ClientCommand::StartFlooding => {
+                info!("Starting flooding");
+                match self.discovery() {
+                    Ok(_) => {
+                        println!("Discovery complete!");
+                    }
+                    Err(error) => {
+                        println!("Discovery failed: {}", error);
+                    }
+                };
+            }
+            ClientCommand::AskTypeTo(server_id) => {
+                info!("Requesting server type for server {}", server_id);
+                match self.request_server_type(server_id) {
+                    Ok(_) => {
+                        println!("Server type is: {}", self.servers.get(&server_id).unwrap());
+                    }
+                    Err(error) => {
+                        println!("Failed to get server type: {}", error);
+                    }
+                };
+            }
+            // -------------- for tests -------------- \\
         }
     }
 
@@ -303,18 +327,10 @@ impl ChatClientDanylo {
 
     /// ###### Handles the response error.
     /// Logs the error and takes appropriate action based on the error type.
-    fn handle_response_error(&mut self, server_id: NodeId, error: ServerError) {
+    fn handle_response_error(&mut self, server_id: NodeId, error: String) {
         error!("Error received from server {}: {:?}", server_id, error);
 
-        match error {
-            ServerError::NoSuchClient(client_id) => {
-                self.clients.remove(&client_id);
-                self.external_error = Some(format!("Error received from server {}: No client with id {}", server_id, client_id));
-            }
-            ServerError::UnexpectedError(error) => {
-                self.external_error = Some(format!("Error received from server {}: {:?}", server_id, error));
-            }
-        }
+        self.external_error = Some(format!("Error received from server {}: {:?}", server_id, error));
     }
 
     /// ###### Waits for a response from the server.
