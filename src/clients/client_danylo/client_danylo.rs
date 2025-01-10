@@ -18,8 +18,10 @@ use crate::{
     general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
     clients::client::Client
 };
-use crate::clients::client_danylo::ui::ChatClientUI;
-use super::message_fragments::MessageFragments;
+use super::{
+    message_fragments::MessageFragments,
+    chat_gui::ChatGUI,
+};
 
 pub struct ChatClientDanylo {
     // ID
@@ -140,8 +142,7 @@ impl ChatClientDanylo {
                 info!("Removed sender for node {}", id);
             }
             ClientCommand::RunUI => {
-                info!("Running UI");
-                ChatClientUI::new(self).run();
+                self.run_gui();
             }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
@@ -168,6 +169,13 @@ impl ChatClientDanylo {
             }
             // -------------- for tests -------------- \\
         }
+    }
+
+    /// ###### Runs the GUI for the chat client.
+    /// Creates a new instance of the ChatGUI and runs it.
+    pub fn run_gui(&mut self) {
+        info!("Running GUI");
+        ChatGUI::new(self).run();
     }
 
     /// ###### Handles the acknowledgment (ACK) for a given session and fragment.
