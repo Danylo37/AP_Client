@@ -18,7 +18,7 @@ pub type FragmentIndex = u64;
 pub type UsingTimes = u64;  //to measure traffic of fragments in a path.
 
 ///packet sending status
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NotSentType{
     ToBeSent,
     Dropped,
@@ -27,13 +27,13 @@ pub enum NotSentType{
     BeenInWrongRecipient,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Speaker{
     Me,
     HimOrHer,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PacketStatus{
     Sent,                   //Successfully sent packet, that is with ack received
     NotSent(NotSentType),   //Include the packet not successfully sent, that is nack received
@@ -60,6 +60,8 @@ pub enum ClientCommand {
     RunUI,
     StartFlooding,
     AskTypeTo(ServerId),
+    RequestText(NodeId),
+    RequestMedia(NodeId),
 }
 
 
@@ -115,7 +117,7 @@ pub enum Response {
 }
 
 ///Material
-#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub enum ServerType {
     Communication,
     Text,
@@ -132,5 +134,27 @@ impl Display for ServerType {
             ServerType::Undefined => "Undefined",
         };
         write!(f, "{}", name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Hash, Serialize, Deserialize)]
+pub enum ClientType {
+    Chat,
+    Web,
+}
+impl ClientType {
+    // Returns an iterator over all variants of DroneBrand
+    pub fn iter() -> impl Iterator<Item = ClientType> {
+        [
+            ClientType::Chat,
+            ClientType::Web,
+        ]
+            .into_iter()
+    }
+}
+
+impl Display for ClientType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
