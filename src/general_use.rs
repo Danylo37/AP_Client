@@ -6,6 +6,7 @@ use wg_2024::{
     network::NodeId,
     packet::Packet,
 };
+// use crate::network_initializer::DroneBrand;
 
 pub type Message = String;
 pub type File = String;
@@ -44,7 +45,8 @@ pub enum PacketStatus{
 #[derive(Debug, Clone)]
 pub enum ServerCommand {
     RemoveSender(NodeId),
-    AddSender(NodeId, Sender<Packet>)
+    AddSender(NodeId, Sender<Packet>),
+    ShortcutPacket(Packet),
 }
 
 ///Server-Controller
@@ -62,16 +64,15 @@ pub enum ClientCommand {
     AskTypeTo(ServerId),
     RequestText(NodeId),
     RequestMedia(NodeId),
+    ShortcutPacket(Packet),
+    GetKnownServers,
 }
 
 
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
     PacketSent(Packet),
-    SenderRemoved(NodeId),
-    SenderAdded(NodeId),
-    DoingFlood(FloodId),
-    FloodIsFinished(FloodId),
+    KnownServers(Vec<(NodeId, ServerType)>),
 }
 
 //Queries (Client -> Server)
