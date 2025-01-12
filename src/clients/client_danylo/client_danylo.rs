@@ -22,38 +22,38 @@ pub type Node = (NodeId, NodeType);
 
 pub struct ChatClientDanylo {
     // ID
-    pub id: NodeId,                                         // Client ID
+    pub id: NodeId,                                             // Client ID
 
     // Channels
-    packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
-    packet_recv: Receiver<Packet>,                          // Packet receiver channel
-    controller_send: Sender<ClientEvent>,                   // Event sender channel
-    controller_recv: Receiver<ClientCommand>,               // Command receiver channel
+    pub packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
+    pub packet_recv: Receiver<Packet>,                          // Packet receiver channel
+    pub controller_send: Sender<ClientEvent>,                   // Event sender channel
+    pub controller_recv: Receiver<ClientCommand>,               // Command receiver channel
 
     // Servers and clients
-    pub servers: HashMap<NodeId, ServerType>,               // IDs and types of the available servers
-    pub is_registered: HashMap<NodeId, bool>,               // Registration status on servers
-    pub clients: HashSet<NodeId>,                           // Available clients
+    pub servers: HashMap<NodeId, ServerType>,                   // IDs and types of the available servers
+    pub is_registered: HashMap<NodeId, bool>,                   // Registration status on servers
+    pub clients: HashMap<NodeId, Vec<NodeId>>,              // Available clients on different servers
 
     // Used IDs
-    session_ids: Vec<u64>,                                  // Used session IDs
-    flood_ids: Vec<u64>,                                    // Used flood IDs
+    pub session_ids: Vec<u64>,                                  // Used session IDs
+    pub flood_ids: Vec<u64>,                                    // Used flood IDs
 
     // Network
-    pub topology: HashMap<NodeId, HashSet<NodeId>>,         // Nodes and their neighbours
-    routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
+    pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
+    pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
 
     // Message queues
-    messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
-    fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    pub messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
+    pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 
     // Inbox
-    pub inbox: Vec<(NodeId, Message)>,                      // Messages with their senders
+    pub inbox: Vec<(NodeId, Message)>,                          // Messages with their senders
 
     // For GUI
-    pub response_received: bool,                            // Flag to indicate if a response was received for the last request
-    pub external_error: Option<String>,                     // Error message from server/drone
-    pub flood_responses: Vec<(Node, Vec<Node>)>,            // Received flood responses (from_node, path_trace)
+    pub response_received: bool,                                // Flag to indicate if a response was received for the last request
+    pub external_error: Option<String>,                         // Error message from server/drone
+    pub flood_responses: Vec<(Node, Vec<Node>)>,                // Received flood responses (from_node, path_trace)
 }
 
 impl Client for ChatClientDanylo {
@@ -73,7 +73,7 @@ impl Client for ChatClientDanylo {
             controller_recv,
             servers: HashMap::new(),
             is_registered: HashMap::new(),
-            clients: HashSet::new(),
+            clients: HashMap::new(),
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
             topology: HashMap::new(),
@@ -149,19 +149,28 @@ impl ChatClientDanylo {
             }
             ClientCommand::GetKnownServers => {
                 debug!("Handling GetKnownServers command");
-                let servers: Vec<(NodeId, ServerType)> = self
+                let servers: Vec<(NodeId, ServerType, bool)> = self
                     .servers
                     .iter()
-                    .map(|(&id, &server_type)| (id, server_type))
+                    .map(|(&id, &server_type)| (
+                        id,
+                        server_type,
+                        *self.is_registered.get(&id).unwrap_or(&false)))
                     .collect();
                 self.send_event(ClientEvent::KnownServers(servers));
             }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
-                self.discovery();
+                match self.discovery() {
+                    Ok(_) => info!("Discovery process started successfully"),
+                    Err(err) => error!("Failed to start discovery process: {}", err),
+                };
             }
             ClientCommand::AskTypeTo(server_id) => {
-                self.request_server_type(server_id);
+                match self.request_server_type(server_id) {
+                    Ok(_) => info!("Server type request sent successfully"),
+                    Err(err) => error!("Failed to request server type: {}", err),
+                };
             }
             // -------------- for tests -------------- \\
             _ => {}
@@ -343,7 +352,7 @@ impl ChatClientDanylo {
                     self.handle_client_registered(server_id);
                 }
                 Response::ListClients(clients) => {
-                    self.handle_clients_list(clients);
+                    self.handle_clients_list(server_id, clients);
                 }
                 Response::MessageFrom(from, message) => {
                     info!("New message from {}: {:?}", from, &message);
@@ -387,10 +396,10 @@ impl ChatClientDanylo {
 
     /// ###### Handles the list of clients received from the server.
     /// Updates the list of available clients and marks the response as received.
-    fn handle_clients_list(&mut self, clients: Vec<NodeId>) {
+    fn handle_clients_list(&mut self, server_id: NodeId, clients: Vec<NodeId>) {
         info!("List of clients received successfully.");
 
-        self.clients = clients.into_iter().collect();
+        self.clients.insert(server_id, clients);
         self.response_received = true;
     }
 

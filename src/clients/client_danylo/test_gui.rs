@@ -24,9 +24,7 @@ pub fn test_gui() {
     c1.servers.insert(7, ServerType::Text);
     c1.servers.insert(8, ServerType::Undefined);
 
-    c1.clients.insert(9);
-    c1.clients.insert(10);
-    c1.clients.insert(11);
+    c1.clients.insert(5, vec![9, 10, 11]);
 
     c1.inbox.push((9, "Hello".to_string()));
     c1.inbox.push((11, "What is your name?".to_string()));
