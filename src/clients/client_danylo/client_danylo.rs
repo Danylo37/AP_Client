@@ -33,7 +33,7 @@ pub struct ChatClientDanylo {
     // Servers and clients
     pub servers: HashMap<NodeId, ServerType>,                   // IDs and types of the available servers
     pub is_registered: HashMap<NodeId, bool>,                   // Registration status on servers
-    pub clients: HashMap<NodeId, Vec<NodeId>>,              // Available clients on different servers
+    pub clients: HashMap<NodeId, Vec<NodeId>>,                  // Available clients on different servers
 
     // Used IDs
     pub session_ids: Vec<u64>,                                  // Used session IDs
@@ -108,7 +108,7 @@ impl Client for ChatClientDanylo {
 
 impl ChatClientDanylo {
     /// ###### Handles incoming packets and delegates them to the appropriate handler based on the packet type.
-    fn handle_packet(&mut self, packet: Packet) {
+    pub(crate) fn handle_packet(&mut self, packet: Packet) {
         debug!("Handling packet: {:?}", packet);
 
         match packet.pack_type.clone() {
@@ -128,7 +128,7 @@ impl ChatClientDanylo {
     }
 
     /// ###### Handles incoming commands.
-    fn handle_command(&mut self, command: ClientCommand) {
+    pub(crate) fn handle_command(&mut self, command: ClientCommand) {
         debug!("Handling command: {:?}", command);
 
         match command {
@@ -195,7 +195,7 @@ impl ChatClientDanylo {
         let message = self.messages_to_send.get_mut(&session_id).unwrap();
 
         // Check if there is a next fragment to send.
-        if let Some(next_fragment) = message.get_fragment_packet(fragment_index as usize) {
+        if let Some(next_fragment) = message.get_fragment_packet((fragment_index + 1) as usize) {
             // Prepare and send the next fragment if available.
             message.increment_last_index();
             match self.send_to_next_hop(next_fragment) {
