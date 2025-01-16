@@ -41,7 +41,8 @@ pub struct ChatGUI<'a> {
     current_message: Option<String>,
     current_message_status: Option<String>,
     discovery_result: String,
-    wait_response: bool
+    wait_response: bool,
+    start_discovery: bool,
 }
 
 impl App for ChatGUI<'_>  {
@@ -78,6 +79,7 @@ impl <'a> ChatGUI<'a> {
             current_message_status: None,
             discovery_result: String::new(),
             wait_response: false,
+            start_discovery: true,
         }
     }
 
@@ -404,12 +406,15 @@ impl <'a> ChatGUI<'a> {
         ui.separator();
 
         ui.label("Starting discovery...");
-        match self.client.discovery() {
-            Ok(_) => {
-                self.wait_response = true;
-            }
-            Err(error) => {
-                self.discovery_result = format!("Failed to discover: {}", error);
+        if self.start_discovery {
+            match self.client.discovery() {
+                Ok(_) => {
+                    self.wait_response = true;
+                    self.start_discovery = false;
+                }
+                Err(error) => {
+                    self.discovery_result = format!("Failed to discover: {}", error);
+                }
             }
         }
 
@@ -424,6 +429,7 @@ impl <'a> ChatGUI<'a> {
         ui.separator();
         if ui.button("Back").clicked() {
             self.discovery_result = String::new();
+            self.start_discovery = true;
             self.current_menu = Menu::Main;
         }
     }
