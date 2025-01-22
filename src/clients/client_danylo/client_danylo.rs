@@ -613,22 +613,42 @@ impl ChatClientDanylo {
             flood_request,
         );
 
-        let result = Ok(());
+        let mut error_drones = Vec::new();
 
         // Attempt to send the flood request to all neighbors.
         for sender in &self.packet_send {
             if let Err(_) = sender.1.send(packet.clone()) {
                 error!("Failed to send FloodRequest to the drone {}.", sender.0);
-                return Err(format!("Failed to send FloodRequest to the drone {}.", sender.0));
+
+                // Add the drone ID to the list of failed drones.
+                error_drones.push(sender.0);
             } else {
                 info!("FloodRequest sent to the drone with id {}.", sender.0);
-            }
 
-            // Send the 'PacketSent' event to the simulation controller
-            self.send_event(ClientEvent::PacketSent(packet.clone()));
+                // Send the 'PacketSent' event to the simulation controller.
+                self.send_event(ClientEvent::PacketSent(packet.clone()));
+            }
         }
 
-        result
+        let mut error_string = String::new();
+
+        // Check number of errors and create an error message if necessary.
+        if error_drones.len() == 1 {
+            error_string = format!("Failed to send FloodRequest to drone {}", error_drones[0]);
+        }
+        if error_drones.len() > 1 {
+            let formatted_drone_ids = error_drones.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", ");
+            error_string = format!("Failed to send FloodRequests to drones: {}", formatted_drone_ids);
+        }
+
+        if error_string.is_empty() {
+            Ok(())
+        } else {
+            Err(error_string)
+        }
     }
 
     /// ###### Requests the type of specified server.
