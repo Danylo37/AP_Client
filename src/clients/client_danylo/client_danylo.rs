@@ -300,6 +300,44 @@ impl ChatClientDanylo {
         }
     }
 
+    /// ###### Finds a route from the current node to the specified server using breadth-first search.
+    ///
+    /// This method explores the network topology starting from the current node, and returns the shortest path
+    /// (in terms of hops) to the specified server if one exists. It uses a queue to explore nodes level by level,
+    /// ensuring that the first valid path found is the shortest. If no path is found, it returns `None`.
+    fn find_route_to(&self, server_id: NodeId) -> Option<Vec<NodeId>> {
+        // Initialize a queue for breadth-first search and a set to track visited nodes.
+        let mut queue: VecDeque<(NodeId, Vec<NodeId>)> = VecDeque::new();
+        let mut visited: HashSet<NodeId> = HashSet::new();
+
+        // Start from the current node with an initial path containing just the current node.
+        queue.push_back((self.id, vec![self.id]));
+
+        // Perform breadth-first search.
+        while let Some((current, path)) = queue.pop_front() {
+            // If the destination node is reached, return the path.
+            if current == server_id {
+                return Some(path);
+            }
+
+            // Mark the current node as visited.
+            visited.insert(current);
+
+            // Explore the neighbors of the current node.
+            if let Some(neighbors) = self.topology.get(&current) {
+                for &neighbor in neighbors {
+                    // Only visit unvisited neighbors.
+                    if !visited.contains(&neighbor) {
+                        let mut new_path = path.clone();
+                        new_path.push(neighbor); // Extend the path to include the neighbor.
+                        queue.push_back((neighbor, new_path)); // Add the neighbor to the queue.
+                    }
+                }
+            }
+        }
+        None    // Return None if no path to the server is found.
+    }
+
     /// ###### Resends the fragment for the specified session.
     /// Retrieves the message and resends the fragment with the specified index.
     fn resend_fragment(&mut self, fragment_index: u64, session_id: u64) {
@@ -691,45 +729,6 @@ impl ChatClientDanylo {
             Err("Failed to create message.".to_string())
         }
     }
-
-    /// ###### Finds a route from the current node to the specified server using breadth-first search.
-    ///
-    /// This method explores the network topology starting from the current node, and returns the shortest path
-    /// (in terms of hops) to the specified server if one exists. It uses a queue to explore nodes level by level,
-    /// ensuring that the first valid path found is the shortest. If no path is found, it returns `None`.
-    fn find_route_to(&self, server_id: NodeId) -> Option<Vec<NodeId>> {
-        // Initialize a queue for breadth-first search and a set to track visited nodes.
-        let mut queue: VecDeque<(NodeId, Vec<NodeId>)> = VecDeque::new();
-        let mut visited: HashSet<NodeId> = HashSet::new();
-
-        // Start from the current node with an initial path containing just the current node.
-        queue.push_back((self.id, vec![self.id]));
-
-        // Perform breadth-first search.
-        while let Some((current, path)) = queue.pop_front() {
-            // If the destination node is reached, return the path.
-            if current == server_id {
-                return Some(path);
-            }
-
-            // Mark the current node as visited.
-            visited.insert(current);
-
-            // Explore the neighbors of the current node.
-            if let Some(neighbors) = self.topology.get(&current) {
-                for &neighbor in neighbors {
-                    // Only visit unvisited neighbors.
-                    if !visited.contains(&neighbor) {
-                        let mut new_path = path.clone();
-                        new_path.push(neighbor); // Extend the path to include the neighbor.
-                        queue.push_back((neighbor, new_path)); // Add the neighbor to the queue.
-                    }
-                }
-            }
-        }
-        None    // Return None if no path to the server is found.
-    }
-
 
     /// ###### Reassembles the fragments for a given session into a complete message.
     /// Returns the reassembled message or an error if reassembly fails.
