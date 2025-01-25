@@ -379,14 +379,14 @@ impl ChatClientDanylo {
                     self.handle_clients_list(server_id, clients);
                 }
                 Response::MessageFrom(from, message) => {
-                    info!("New message from {}: {:?}", from, &message);
+                    info!("Client {}: New message from {}: {:?}", self.id, from, &message);
 
                     self.ui_response_send.send(Response::MessageFrom(from, message.clone())).unwrap();
 
                     self.inbox.insert(0, (from, message));
                 }
                 Response::Err(error) =>
-                    error!("Error received from server {}: {:?}", server_id, error),
+                    error!("Client {}: Error received from server {}: {:?}", self.id, server_id, error),
                 _ => {}
             }
         }
