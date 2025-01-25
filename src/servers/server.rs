@@ -316,7 +316,6 @@ pub trait Server{
     }
 
     fn send_again_fragment(&mut self, session_id: u64, fragment_index: u64){
-
         //Getting right message and destination id
         let message_and_destination = self.get_sending_messages_not_mutable().get(&session_id).unwrap();
 
@@ -329,7 +328,7 @@ pub trait Server{
 
         let offset = fragment_index*128;
         let mut data:[u8;128] = [0;128];
-        if offset > length_response as u64 {
+        if (offset+128) > length_response as u64 {
             data[0..(message_and_destination.0.len() as u64 - offset) as usize].copy_from_slice(&message_and_destination.0[offset as usize..message_and_destination.0.len()]);
         }else{
             data.copy_from_slice(&message_and_destination.0[offset as usize..(offset+128) as usize]);
