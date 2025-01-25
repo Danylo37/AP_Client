@@ -154,6 +154,12 @@ impl ChatClientDanylo {
             ClientCommand::SendMessageTo(to, message) => {
                 self.send_message_to(to, message)
             }
+            ClientCommand::RegisterToServer(server_id) => {
+                self.request_to_register(server_id)
+            }
+            ClientCommand::RequestListClients(server_id) => {
+                self.request_clients_list(server_id)
+            }
             _ => {}
         }
     }
@@ -414,13 +420,17 @@ impl ChatClientDanylo {
     }
 
     /// ###### Handles the list of clients received from the server.
-    /// Updates the list of available clients and marks the response as received.
-    fn handle_clients_list(&mut self, server_id: ServerId, clients: Vec<ClientId>) {
+    /// Updates the list of available clients.
+    fn handle_clients_list(&mut self, server_id: ServerId, mut clients: Vec<ClientId>) {
         info!("Client {}: List of clients received successfully.", self.id);
 
-        self.clients.insert(server_id, clients.clone());
+        self.ui_response_send.send(Response::ListClients(clients.clone())).unwrap();
 
-        self.ui_response_send.send(Response::ListClients(clients)).unwrap();
+        // Remove self id from the clients list if it exists
+        clients.retain(|&client_id| client_id != self.id);
+
+        self.clients.insert(server_id, clients);
+
     }
 
     /// ###### Sends an acknowledgment (ACK) for a received fragment.

@@ -178,8 +178,15 @@ pub trait Server{
         first_carrier.send(packet).unwrap();
     }
 
-    fn find_path_to(&self, _destination_id: NodeId) -> Vec<NodeId>{
-        vec![8, 4, 1]
+    fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId>{
+        match destination_id {
+            1 => vec![8, 4, 1],
+            2 => vec![8, 5, 2],
+            7 => vec![8, 4, 10, 7],
+            9 => vec![8, 5, 13, 9],
+            18 => vec![8, 12, 15, 18],
+            _ => vec![],
+        }
     }
 
     fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader{

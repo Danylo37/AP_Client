@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use crossbeam_channel::Receiver;
 use wg_2024::network::NodeId;
-use crate::general_use::Response;
+use crate::general_use::{ClientCommand, Response};
 use crate::simulation_controller::SimulationController;
 
 pub struct UI<'a> {
@@ -90,7 +90,7 @@ impl<'a>  UI<'a> {
             println!(
                 "\nChoose client function?\n\
                 1. Start flooding\n\
-                2. Ask the servers something\n\
+                2. Ask server something\n\
                 0. Go back"
             );
 
@@ -117,14 +117,18 @@ impl<'a>  UI<'a> {
             println!(
                 "\n What is your query?\n\
                 1. Ask type to the servers\n\
-                2. More\n\
+                2. Register to a server\n\
+                3. List clients\n\
+                4. Send message to\n\
                 0. Go back"
             );
             let user_choice = Self::ask_input_user();
 
             match user_choice {
                 1 => self.ask_type(client_id_chose, 8),
-                2 => println!("to do"),
+                2 => self.register_to_server(client_id_chose, 8),
+                3 => self.ask_list_clients(client_id_chose, 8),
+                4 => self.send_message_to(client_id_chose),
                 0 => stay_inside = false,
                 _ => println!("Not a valid option, choose again")
             }
@@ -150,5 +154,84 @@ impl<'a>  UI<'a> {
                 eprintln!("Error receiving response: {}", err);
             }
         }
+    }
+
+
+    fn register_to_server(&mut self, client_id: NodeId, server_id: NodeId) {
+        println!("Asking to register to server {}", server_id);
+        self.controller
+            .command_senders_clients
+            .get(&client_id)
+            .unwrap()
+            .0
+            .send(ClientCommand::RegisterToServer(server_id))
+            .unwrap();
+
+        match self.response_recv.recv() {
+            Ok(response) => {
+                match response {
+                    Response::ClientRegistered => {
+                        println!("Client registered to server {} successfully", server_id);
+                    }
+                    _ => {
+                        println!("Unexpected response");
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("Error receiving response: {}", err);
+            }
+        }
+    }
+
+    fn ask_list_clients(&mut self, client_id: NodeId, server_id: NodeId) {
+        println!("Requesting clients list from server {}", server_id);
+        self.controller
+            .command_senders_clients
+            .get(&client_id)
+            .unwrap()
+            .0
+            .send(ClientCommand::RequestListClients(server_id))
+            .unwrap();
+
+        match self.response_recv.recv() {
+            Ok(response) => {
+                match response {
+                    Response::ListClients(list) => {
+                        println!("Clients list {:?}", list);
+                    }
+                    _ => {
+                        println!("Unexpected response");
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("Error receiving response: {}", err);
+            }
+        }
+    }
+
+    fn send_message_to(&mut self, client_id: NodeId) {
+        println!("Sending message to another client");
+        println!("Which client do you want to send the message to?");
+        let clients_ids = self.controller.get_list_clients();
+        for (i, client) in clients_ids.iter().enumerate(){
+            println!(
+                "{}. Client {}", i+1, client.1
+            );
+        }
+
+        let user_choice = Self::ask_input_user();
+        let client_id_chose = clients_ids[user_choice - 1].1;
+
+        let message = "Message".to_string();
+
+        self.controller
+            .command_senders_clients
+            .get(&client_id)
+            .unwrap()
+            .0
+            .send(ClientCommand::SendMessageTo(client_id_chose, message))
+            .unwrap();
     }
 }
