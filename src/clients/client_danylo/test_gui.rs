@@ -45,6 +45,8 @@ pub fn create_test_chat_client(id: NodeId) -> ChatClientDanylo {
     let (_sc_command_send, sc_command_recv) = unbounded();
     let (sc_event_send, _sc_event_recv) = unbounded();
 
+    let (ui_send, _ui_recv) = unbounded();
+
     let packet_send: HashMap<NodeId, Sender<Packet>> = HashMap::from([(2, d2_send), (3, d3_send)]);
 
     ChatClientDanylo::new(
@@ -52,5 +54,7 @@ pub fn create_test_chat_client(id: NodeId) -> ChatClientDanylo {
         packet_send,
         c1_recv,
         sc_event_send,
-        sc_command_recv)
+        sc_command_recv,
+        ui_send,
+    )
 }

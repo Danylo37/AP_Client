@@ -13,47 +13,46 @@ use wg_2024::{
 };
 
 use crate::{
-    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
+    general_use::{
+        ClientCommand, ClientEvent, Message, Query, Response, ServerType,
+        ClientId, ServerId, SessionId, FloodId, FragmentIndex
+    },
     clients::Client
 };
-use super::{MessageFragments, ChatGUI};
+use super::MessageFragments;
 
 pub type Node = (NodeId, NodeType);
 
 pub struct ChatClientDanylo {
     // ID
-    pub id: NodeId,                                             // Client ID
+    pub id: ClientId,                                                 // Client ID
 
     // Channels
-    pub packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
-    pub packet_recv: Receiver<Packet>,                          // Packet receiver channel
-    pub controller_send: Sender<ClientEvent>,                   // Event sender channel
-    pub controller_recv: Receiver<ClientCommand>,               // Command receiver channel
+    pub packet_send: HashMap<NodeId, Sender<Packet>>,                 // Neighbor's packet sender channels
+    pub packet_recv: Receiver<Packet>,                                // Packet receiver channel
+    pub controller_send: Sender<ClientEvent>,                         // Event sender channel
+    pub controller_recv: Receiver<ClientCommand>,                     // Command receiver channel
+    pub ui_response_send: Sender<Response>,                           // UI response sender channel
 
     // Servers and clients
-    pub servers: HashMap<NodeId, ServerType>,                   // IDs and types of the available servers
-    pub is_registered: HashMap<NodeId, bool>,                   // Registration status on servers
-    pub clients: HashMap<NodeId, Vec<NodeId>>,                  // Available clients on different servers
+    pub servers: HashMap<ServerId, ServerType>,                       // IDs and types of the available servers
+    pub is_registered: HashMap<ServerId, bool>,                       // Registration status on servers
+    pub clients: HashMap<ServerId, Vec<ClientId>>,                    // Available clients on different servers
 
     // Used IDs
-    pub session_ids: Vec<u64>,                                  // Used session IDs
-    pub flood_ids: Vec<u64>,                                    // Used flood IDs
+    pub session_ids: Vec<SessionId>,                                  // Used session IDs
+    pub flood_ids: Vec<FloodId>,                                      // Used flood IDs
 
     // Network
-    pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
-    pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
+    pub topology: HashMap<NodeId, HashSet<NodeId>>,                   // Nodes and their neighbours
+    pub routes: HashMap<ServerId, Vec<NodeId>>,                       // Routes to the servers
 
     // Message queues
-    pub messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
-    pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    pub messages_to_send: HashMap<SessionId, MessageFragments>,       // Queue of messages to be sent for different sessions
+    pub fragments_to_reassemble: HashMap<SessionId, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 
     // Inbox
-    pub inbox: Vec<(NodeId, Message)>,                          // Messages with their senders
-
-    // For GUI
-    pub response_received: bool,                                // Flag to indicate if a response was received for the last request
-    pub external_error: Option<String>,                         // Error message from server/drone
-    pub flood_responses: Vec<(Node, Vec<Node>)>,                // Received flood responses (from_node, path_trace)
+    pub inbox: Vec<(ClientId, Message)>,                              // Messages with their senders
 }
 
 impl Client for ChatClientDanylo {
@@ -63,6 +62,7 @@ impl Client for ChatClientDanylo {
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
         controller_recv: Receiver<ClientCommand>,
+        ui_response_send: Sender<Response>,
     ) -> Self {
         info!("Starting ChatClientDanylo with ID: {}", id);
         Self {
@@ -71,6 +71,7 @@ impl Client for ChatClientDanylo {
             packet_recv,
             controller_send,
             controller_recv,
+            ui_response_send,
             servers: HashMap::new(),
             is_registered: HashMap::new(),
             clients: HashMap::new(),
@@ -81,9 +82,6 @@ impl Client for ChatClientDanylo {
             messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
             inbox: Vec::new(),
-            response_received: false,
-            external_error: None,
-            flood_responses: Vec::new(),
         }
     }
 
@@ -109,7 +107,7 @@ impl Client for ChatClientDanylo {
 impl ChatClientDanylo {
     /// ###### Handles incoming packets and delegates them to the appropriate handler based on the packet type.
     pub(crate) fn handle_packet(&mut self, packet: Packet) {
-        debug!("Handling packet: {:?}", packet);
+        debug!("Client {}: Handling packet: {:?}", self.id, packet);
 
         match packet.pack_type.clone() {
             PacketType::Ack(ack) => self.handle_ack(ack.fragment_index, packet.session_id),
@@ -129,67 +127,58 @@ impl ChatClientDanylo {
 
     /// ###### Handles incoming commands.
     pub(crate) fn handle_command(&mut self, command: ClientCommand) {
-        debug!("Handling command: {:?}", command);
+        debug!("Client {}: Handling command: {:?}", self.id, command);
 
         match command {
             ClientCommand::AddSender(id, sender) => {
                 self.packet_send.insert(id, sender);
-                info!("Added sender for node {}", id);
+                info!("Client {}: Added sender for node {}", self.id, id);
             }
             ClientCommand::RemoveSender(id) => {
                 self.packet_send.remove(&id);
-                info!("Removed sender for node {}", id);
-            }
-            ClientCommand::RunUI => {
-                self.run_gui();
+                info!("Client {}: Removed sender for node {}", self.id, id);
             }
             ClientCommand::ShortcutPacket(packet) => {
-                info!("Shortcut packet received from SC: {:?}", packet);
+                info!("Client {}: Shortcut packet received from SC: {:?}", self.id, packet);
                 self.handle_packet(packet);
             }
             ClientCommand::GetKnownServers => {
-                debug!("Handling GetKnownServers command");
-                let servers: Vec<(NodeId, ServerType, bool)> = self
-                    .servers
-                    .iter()
-                    .map(|(&id, &server_type)| (
-                        id,
-                        server_type,
-                        *self.is_registered.get(&id).unwrap_or(&false)))
-                    .collect();
-                self.send_event(ClientEvent::KnownServers(servers));
+                self.handle_get_known_servers()
             }
-            // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
-                match self.discovery() {
-                    Ok(_) => info!("Discovery process started successfully"),
-                    Err(err) => error!("Failed to start discovery process: {}", err),
-                };
+                self.discovery()
             }
             ClientCommand::AskTypeTo(server_id) => {
-                match self.request_server_type(server_id) {
-                    Ok(_) => info!("Server type request sent successfully"),
-                    Err(err) => error!("Failed to request server type: {}", err),
-                };
+                self.request_server_type(server_id)
             }
-            // -------------- for tests -------------- \\
+            ClientCommand::SendMessageTo(to, message) => {
+                self.send_message_to(to, message)
+            }
             _ => {}
         }
     }
 
-    /// ###### Runs the GUI for the chat client.
-    /// Creates a new instance of the ChatGUI and runs it.
-    pub fn run_gui(&mut self) {
-        info!("Running GUI");
-        ChatGUI::new(self).run();
+    /// ###### Handles the 'GetKnownServers' command.
+    /// Sends the list of known servers to the simulation controller.
+    fn handle_get_known_servers(&mut self) {
+        let servers: Vec<(ServerId, ServerType, bool)> = self
+            .servers
+            .iter()
+            .map(|(&id, &server_type)| (
+                id,
+                server_type,
+                *self.is_registered.get(&id).unwrap_or(&false)))
+            .collect();
+
+        self.send_event(ClientEvent::KnownServers(servers));
     }
 
     /// ###### Handles the acknowledgment (ACK) for a given session and fragment.
     /// Processes the acknowledgment for a specific fragment in a session.
     /// If there are more fragments to send, it sends the next fragment.
     /// If all fragments are acknowledged, it removes the message from queue.
-    fn handle_ack(&mut self, fragment_index: u64, session_id: u64) {
-        debug!("Handling ACK for session {} and fragment {}", session_id, fragment_index);
+    fn handle_ack(&mut self, fragment_index: FragmentIndex, session_id: SessionId) {
+        debug!("Client {}: Handling ACK for session {} and fragment {}", self.id, session_id, fragment_index);
 
         // Retrieve the message fragments for the given session.
         let message = self.messages_to_send.get_mut(&session_id).unwrap();
@@ -199,31 +188,30 @@ impl ChatClientDanylo {
             // Prepare and send the next fragment if available.
             message.increment_last_index();
             match self.send_to_next_hop(next_fragment) {
-                Ok(_) => info!("Sent next fragment for session {}", session_id),
-                Err(err) => error!("Failed to send next fragment for session {}: {}", session_id, err),
+                Ok(_) => info!("Client {}: Sent next fragment for session {}", self.id, session_id),
+                Err(err) => error!("Client {}: Failed to send next fragment for session {}: {}", self.id, session_id, err),
             }
         } else {
             // All fragments are acknowledged; remove the message from queue.
             self.messages_to_send.remove(&session_id);
-            self.response_received = true;
-            info!("All fragments acknowledged for session {}", session_id);
+            info!("Client {}: All fragments acknowledged for session {}", self.id, session_id);
         }
     }
 
     /// ###### Handles the negative acknowledgment (NACK) for a given session.
     /// Processes the NACK for a specific session and takes appropriate action based on the NACK type.
-    fn handle_nack(&mut self, nack: Nack, session_id: u64) {
-        warn!("Handling NACK for session {}: {:?}", session_id, nack);
+    fn handle_nack(&mut self, nack: Nack, session_id: SessionId) {
+        warn!("Client {}: Handling NACK for session {}: {:?}", self.id, session_id, nack);
 
         match nack.nack_type {
             NackType::ErrorInRouting(id) => {
                 self.handle_error_in_routing(nack.fragment_index, id, session_id);
             }
             NackType::DestinationIsDrone => {
-                self.external_error = Some("DestinationIsDrone".to_string());
+                // todo
             }
-            NackType::UnexpectedRecipient(recipient_id) => {
-                self.external_error = Some(format!("UnexpectedRecipient (node with id {})", recipient_id));
+            NackType::UnexpectedRecipient(_recipient_id) => {
+                // todo
             }
             NackType::Dropped => self.resend_fragment(nack.fragment_index, session_id),
         }
@@ -233,15 +221,10 @@ impl ChatClientDanylo {
     /// Updates the network topology and routes based on the error node.
     /// If a new route is found, it resends the fragment for the specified session.
     /// Else, it starts the discovery process to find a new route.
-    /// If the discovery fails, it logs an error and sets the external error.
-    fn handle_error_in_routing(&mut self,fragment_index: u64, error_node: NodeId, session_id: u64) {
+    fn handle_error_in_routing(&mut self,fragment_index: FragmentIndex, error_node: NodeId, session_id: SessionId) {
         self.update_topology_and_routes(error_node, &session_id);
         if self.messages_to_send.get(&session_id).unwrap().get_route().is_empty() {
-            if self.discovery().is_err() {
-                self.external_error = Some("Failed to find a new route after error in routing".to_string());
-                error!("Failed to find a new route after error in routing");
-                return;
-            };
+            self.discovery();
         }
         self.resend_fragment(fragment_index, session_id);
     }
@@ -249,20 +232,20 @@ impl ChatClientDanylo {
     /// ###### Updates the network topology and routes based on the received NACK.
     /// Removes the node that caused the error from the topology and routes.
     /// Finds new routes for the servers that need them.
-    fn update_topology_and_routes(&mut self, error_node: NodeId, session_id: &u64) {
+    fn update_topology_and_routes(&mut self, error_node: NodeId, session_id: &SessionId) {
         // Remove the node that caused the error from the topology.
         for (_, neighbors) in self.topology.iter_mut() {
             neighbors.remove(&error_node);
         }
         self.topology.remove(&error_node);
-        info!("Removed node {} from the topology", error_node);
+        info!("Client {}: Removed node {} from the topology", self.id, error_node);
 
         // Remove the routes that contain the node that caused the error.
         self.routes.retain(|_, path| !path.contains(&error_node));
-        info!("Removed node {} from the routes", error_node);
+        info!("Client {}: Removed node {} from the routes", self.id, error_node);
 
         // Collect server IDs that need new routes.
-        let servers_to_update: Vec<NodeId> = self
+        let servers_to_update: Vec<ServerId> = self
             .routes
             .iter()
             .filter(|(_, path)| path.is_empty())
@@ -274,10 +257,10 @@ impl ChatClientDanylo {
             if let Some(new_path) = self.find_route_to(server_id) {
                 if let Some(path) = self.routes.get_mut(&server_id) {
                     *path = new_path;
-                    info!("Found new route to server {}: {:?}", server_id, path);
+                    info!("Client {}: Found new route to server {}: {:?}", self.id, server_id, path);
                 }
             } else {
-                warn!("No route found to server {}", server_id);
+                warn!("Client {}: No route found to server {}", self.id, server_id);
             }
         }
 
@@ -305,7 +288,7 @@ impl ChatClientDanylo {
     /// This method explores the network topology starting from the current node, and returns the shortest path
     /// (in terms of hops) to the specified server if one exists. It uses a queue to explore nodes level by level,
     /// ensuring that the first valid path found is the shortest. If no path is found, it returns `None`.
-    fn find_route_to(&self, server_id: NodeId) -> Option<Vec<NodeId>> {
+    fn find_route_to(&self, server_id: ServerId) -> Option<Vec<NodeId>> {
         // Initialize a queue for breadth-first search and a set to track visited nodes.
         let mut queue: VecDeque<(NodeId, Vec<NodeId>)> = VecDeque::new();
         let mut visited: HashSet<NodeId> = HashSet::new();
@@ -340,27 +323,24 @@ impl ChatClientDanylo {
 
     /// ###### Resends the fragment for the specified session.
     /// Retrieves the message and resends the fragment with the specified index.
-    fn resend_fragment(&mut self, fragment_index: u64, session_id: u64) {
-        debug!("Resending fragment {} for session {}", fragment_index, session_id);
+    fn resend_fragment(&mut self, fragment_index: FragmentIndex, session_id: SessionId) {
+        debug!("Client {}: Resending fragment {} for session {}", self.id, fragment_index, session_id);
 
         let message = self.messages_to_send.get(&session_id).unwrap();
         let packet = message.get_fragment_packet(fragment_index as usize).unwrap();
         match self.send_to_next_hop(packet) {
-            Ok(_) => info!("Resent fragment {} for session {}", fragment_index, session_id),
-            Err(err) => {
-                error!("Failed to resend fragment {} for session {}: {}", fragment_index, session_id, err);
-                self.external_error = Some(
-                    format!("Failed to resend fragment {} for session {}: {}", fragment_index, session_id, err)
-                );
-            },
+            Ok(_) =>
+                info!("Client {}: Resent fragment {} for session {}", self.id, fragment_index, session_id),
+            Err(err) =>
+                error!("Client {}: Failed to resend fragment {} for session {}: {}", self.id, fragment_index, session_id, err),
         }
     }
 
     /// ###### Handles a received message fragment.
     /// Adds the fragment to the collection for the session and checks if it is the last fragment.
     /// If it is the last fragment, reassembles the message and processes the server response.
-    fn handle_fragment(&mut self, fragment: Fragment, session_id: u64, server_id: NodeId) {
-        debug!("Handling fragment for session {}: {:?}", session_id, fragment);
+    fn handle_fragment(&mut self, fragment: Fragment, session_id: SessionId, server_id: ServerId) {
+        debug!("Client {}: Handling fragment for session {}: {:?}", self.id, session_id, fragment);
 
         // Retrieve or create a vector to store fragments for the session.
         let fragments = self.fragments_to_reassemble.entry(session_id).or_insert_with(Vec::new);
@@ -378,8 +358,8 @@ impl ChatClientDanylo {
 
     /// ###### Handles the server response.
     /// Processes the server response based on its type and takes appropriate actions.
-    fn handle_server_response(&mut self, response: Option<Response>, server_id: NodeId) {
-        debug!("Handling server response for server {}: {:?}", server_id, response);
+    fn handle_server_response(&mut self, response: Option<Response>, server_id: ServerId) {
+        debug!("Client {}: Handling server response for server {}: {:?}", self.id, server_id, response);
 
         if let Some(response) = response {
             match response {
@@ -395,11 +375,12 @@ impl ChatClientDanylo {
                 Response::MessageFrom(from, message) => {
                     info!("New message from {}: {:?}", from, &message);
 
+                    self.ui_response_send.send(Response::MessageFrom(from, message.clone())).unwrap();
+
                     self.inbox.insert(0, (from, message));
                 }
-                Response::Err(error) => {
-                    self.handle_response_error(server_id, error);
-                }
+                Response::Err(error) =>
+                    error!("Error received from server {}: {:?}", server_id, error),
                 _ => {}
             }
         }
@@ -408,8 +389,8 @@ impl ChatClientDanylo {
     /// ###### Handles the server type response.
     /// Updates the server type in the `servers` map and sets the registration status if the server is of type `Communication`
     /// and marks the response as received.
-    fn handle_server_type(&mut self, server_id: NodeId, server_type: ServerType) {
-        info!("Server type received successfully.");
+    fn handle_server_type(&mut self, server_id: ServerId, server_type: ServerType) {
+        info!("Client {}: Server type received successfully.", self.id);
 
         // Insert the server type into the servers map.
         self.servers.insert(server_id, server_type);
@@ -419,40 +400,33 @@ impl ChatClientDanylo {
             self.is_registered.insert(server_id, false);
         }
 
-        // Mark the response as received.
-        self.response_received = true;
+        self.ui_response_send.send(Response::ServerType(server_type)).unwrap();
     }
 
     /// ###### Handles the client registration response.
     /// Updates the registration status for the specified server and marks the response as received.
-    fn handle_client_registered(&mut self, server_id: NodeId) {
-        info!("Client registered successfully.");
+    fn handle_client_registered(&mut self, server_id: ServerId) {
+        info!("Client {}: Client registered successfully.", self.id);
 
         self.is_registered.insert(server_id, true);
-        self.response_received = true;
+
+        self.ui_response_send.send(Response::ClientRegistered).unwrap();
     }
 
     /// ###### Handles the list of clients received from the server.
     /// Updates the list of available clients and marks the response as received.
-    fn handle_clients_list(&mut self, server_id: NodeId, clients: Vec<NodeId>) {
-        info!("List of clients received successfully.");
+    fn handle_clients_list(&mut self, server_id: ServerId, clients: Vec<ClientId>) {
+        info!("Client {}: List of clients received successfully.", self.id);
 
-        self.clients.insert(server_id, clients);
-        self.response_received = true;
-    }
+        self.clients.insert(server_id, clients.clone());
 
-    /// ###### Handles the response error.
-    /// Logs the error and takes appropriate action based on the error type.
-    fn handle_response_error(&mut self, server_id: NodeId, error: String) {
-        error!("Error received from server {}: {:?}", server_id, error);
-
-        self.external_error = Some(error);
+        self.ui_response_send.send(Response::ListClients(clients)).unwrap();
     }
 
     /// ###### Sends an acknowledgment (ACK) for a received fragment.
     /// Creates an ACK packet and sends it to the next hop.
     /// Logs the success or failure of the send operation.
-    fn send_ack(&mut self, fragment_index: u64, session_id: u64, mut routing_header: SourceRoutingHeader) {
+    fn send_ack(&mut self, fragment_index: FragmentIndex, session_id: SessionId, mut routing_header: SourceRoutingHeader) {
         // Reverse the routing header and reset the hop index.
         routing_header.reverse();
         routing_header.reset_hop_index();
@@ -462,17 +436,17 @@ impl ChatClientDanylo {
         // Attempt to send the ACK packet to the next hop.
         match self.send_to_next_hop(ack) {
             Ok(_) => {
-                info!("ACK sent successfully for session {} and fragment {}", session_id, fragment_index);
+                info!("Client {}: ACK sent successfully for session {} and fragment {}", self.id, session_id, fragment_index);
             }
             Err(err) => {
-                error!("Failed to send ACK for session {} and fragment {}: {}", session_id, fragment_index, err);
+                error!("Client {}: Failed to send ACK for session {} and fragment {}: {}", self.id, session_id, fragment_index, err);
             }
         };
     }
 
     /// ###### Handles a flood request by adding the client to the path trace and generating a response.
-    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
-        debug!("Handling flood request for session {}: {:?}", session_id, flood_request);
+    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: SessionId) {
+        debug!("Client {}: Handling flood request for session {}: {:?}", self.id, session_id, flood_request);
 
         // Add client to the flood request's path trace.
         flood_request.increment(self.id, NodeType::Client);
@@ -482,8 +456,8 @@ impl ChatClientDanylo {
 
         // Send the response to the next hop.
         match self.send_to_next_hop(response) {
-            Ok(_) => info!("FloodResponse sent successfully."),
-            Err(err) => error!("Error sending FloodResponse: {}", err),
+            Ok(_) => info!("Client {}: FloodResponse sent successfully.", self.id),
+            Err(err) => error!("Client {}: Error sending FloodResponse: {}", self.id, err),
         }
     }
 
@@ -507,12 +481,12 @@ impl ChatClientDanylo {
         // Increment the hop index in the routing header.
         packet.routing_header.increase_hop_index();
 
-        debug!("Sending packet to next hop: {:?}", packet);
+        debug!("Client {}: Sending packet to next hop: {:?}", self.id, packet);
         // Attempt to send the packet to the next hop.
         if sender.send(packet.clone()).is_err() {
             return Err("Error sending packet to next hop.".to_string());
         } else {
-            info!("Packet sent to next hop: {}", next_hop_id);
+            info!("Client {}: Packet sent to next hop: {}", self.id, next_hop_id);
         }
 
         // Send the 'PacketSent' event to the simulation controller
@@ -527,11 +501,10 @@ impl ChatClientDanylo {
     /// based on the path trace provided in the response. It also updates the network topology
     /// with the new path information and updates the time of the last response.
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
-        debug!("Handling flood response: {:?}", flood_response);
+        debug!("Client {}: Handling flood response: {:?}", self.id, flood_response);
 
         let path = &flood_response.path_trace;
 
-        self.flood_responses.push((path.last().unwrap().clone(), path.clone()));
         self.update_routes_and_servers(path);
         self.update_topology(path);
 
@@ -556,7 +529,7 @@ impl ChatClientDanylo {
                     *id,
                     path.iter().map(|entry| entry.0.clone()).collect(),
                 );
-                info!("Updated route to server {}: {:?}", id, path);
+                info!("Client {}: Updated route to server {}: {:?}", self.id, id, path);
             }
         }
     }
@@ -579,13 +552,13 @@ impl ChatClientDanylo {
                 .or_insert_with(HashSet::new)
                 .insert(current);
         }
-        debug!("Updated topology with path: {:?}", path);
+        debug!("Client {}: Updated topology with path: {:?}", self.id, path);
     }
 
     /// ###### Initiates the discovery process to find available servers and clients.
     /// Clears current data structures and sends a flood request to all neighbors.
-    pub fn discovery(&mut self) -> Result<(), String> {
-        info!("Starting discovery process");
+    pub fn discovery(&mut self) {
+        info!("Client {}: Starting discovery process", self.id);
 
         // Clear all current data structures related to topology.
         self.routes.clear();
@@ -613,121 +586,103 @@ impl ChatClientDanylo {
             flood_request,
         );
 
-        let mut error_drones = Vec::new();
-
         // Attempt to send the flood request to all neighbors.
         for sender in &self.packet_send {
             if let Err(_) = sender.1.send(packet.clone()) {
-                error!("Failed to send FloodRequest to the drone {}.", sender.0);
-
-                // Add the drone ID to the list of failed drones.
-                error_drones.push(sender.0);
+                error!("Client {}: Failed to send FloodRequest to the drone {}.", self.id, sender.0);
             } else {
-                info!("FloodRequest sent to the drone with id {}.", sender.0);
+                info!("Client {}: FloodRequest sent to the drone with id {}.", self.id, sender.0);
 
                 // Send the 'PacketSent' event to the simulation controller.
                 self.send_event(ClientEvent::PacketSent(packet.clone()));
             }
         }
-
-        let mut error_string = String::new();
-
-        // Check number of errors and create an error message if necessary.
-        if error_drones.len() == 1 {
-            error_string = format!("Failed to send FloodRequest to drone {}", error_drones[0]);
-        }
-        if error_drones.len() > 1 {
-            let formatted_drone_ids = error_drones.iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join(", ");
-            error_string = format!("Failed to send FloodRequests to drones: {}", formatted_drone_ids);
-        }
-
-        if error_string.is_empty() {
-            Ok(())
-        } else {
-            Err(error_string)
-        }
     }
 
     /// ###### Requests the type of specified server.
     /// Sends a query to the server and waits for a response.
-    pub fn request_server_type(&mut self, server_id: NodeId) -> Result<(), String> {
-        info!("Requesting server type for server {}", server_id);
+    pub fn request_server_type(&mut self, server_id: ServerId) {
+        info!("Client {}: Requesting server type for server {}", self.id, server_id);
 
         let result = self.create_and_send_message(Query::AskType, server_id);
 
         match result {
             Ok(_) => {
-                Ok(())
+                info!("Client {}: Request for server type sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Failed to receive server type: {}", err);
-                Err(err)
+                error!("Client {}: Failed to receive server type: {}", self.id, err);
             },
         }
     }
 
     /// ###### Requests to register the client on a specified server.
     /// Sends a registration query to the server and waits for a response.
-    pub fn request_to_register(&mut self, server_id: NodeId) -> Result<(), String> {
-        info!("Requesting to register on server {}", server_id);
+    pub fn request_to_register(&mut self, server_id: ServerId) {
+        info!("Client {}: Requesting to register on server {}", self.id, server_id);
 
         let result = self.create_and_send_message(Query::RegisterClient(self.id), server_id);
 
         match result {
             Ok(_) => {
-                Ok(())
+                info!("Client {}: Request to register sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Failed to register client: {}", err);
-                Err(err)
+                error!("Client {}: Failed to register client: {}", self.id, err);
             },
         }
     }
 
     /// ###### Requests the list of clients from a specified server.
     /// Sends a query to the server and waits for a response.
-    pub fn request_clients_list(&mut self, server_id: NodeId) -> Result<(), String> {
-        info!("Requesting clients list from server {}", server_id);
+    pub fn request_clients_list(&mut self, server_id: ServerId) {
+        info!("Client {}: Requesting clients list from server {}", self.id, server_id);
 
         let result = self.create_and_send_message(Query::AskListClients, server_id);
 
         match result {
             Ok(_) => {
-                Ok(())
+                info!("Client {}: Request for clients list sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Failed to get list of clients: {}", err);
-                Err(err)
+                error!("Client {}: Failed to get list of clients: {}", self.id, err);
             },
         }
     }
 
     /// ###### Sends a message to a specified client via a specified server.
     /// Sends the message and waits for a response.
-    pub fn send_message_to(&mut self, to: NodeId, message: Message, server_id: NodeId) -> Result<(), String> {
-        info!("Sending message to client {} via server {}", to, server_id);
+    pub fn send_message_to(&mut self, to: ClientId, message: Message) {
+        let option_server_id = self.clients.iter()
+            .find(|(_, clients)| clients.contains(&to))
+            .map(|(server_id, _)| *server_id);
+
+        let server_id = match option_server_id {
+            Some(id) => id,
+            None => {
+                error!("Client {}: Failed to send message: Client {} is not found", self.id, to);
+                return;
+            }
+        };
+
+        info!("Client {}: Sending message to client {} via server {}", self.id, to, server_id);
 
         let result = self.create_and_send_message(Query::SendMessageTo(to, message), server_id);
 
         match result {
             Ok(_) => {
-                info!("Message sent successfully.");
-                Ok(())
+                info!("Client {}: Message sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Failed to send message: {}", err);
-                Err(err)
+                error!("Client {}: Failed to send message: {}", self.id, err);
             },
         }
     }
 
     /// ###### Creates and sends a message to a specified server.
     /// Serializes the data, splits it into fragments, and sends the first fragment.
-    fn create_and_send_message<T: Serialize + Debug>(&mut self, data: T, server_id: NodeId) -> Result<(), String> {
-        debug!("Creating and sending message to server {}: {:?}", server_id, data);
+    fn create_and_send_message<T: Serialize + Debug>(&mut self, data: T, server_id: ServerId) -> Result<(), String> {
+        debug!("Client {}: Creating and sending message to server {}: {:?}", self.id, server_id, data);
 
         // Find or create a route.
         let hops = if let Some(route) = self.routes.get(&server_id) {
@@ -752,14 +707,14 @@ impl ChatClientDanylo {
 
     /// ###### Reassembles the fragments for a given session into a complete message.
     /// Returns the reassembled message or an error if reassembly fails.
-    fn reassemble(&mut self, session_id: u64) -> Option<Response> {
-        debug!("Reassembling message for session {}", session_id);
+    fn reassemble(&mut self, session_id: SessionId) -> Option<Response> {
+        debug!("Client {}: Reassembling message for session {}", self.id, session_id);
 
         // Retrieve the fragments for the given session.
         let fragments = match self.fragments_to_reassemble.get_mut(&session_id) {
             Some(fragments) => fragments,
             None => {
-                error!("No fragments found for session {}", session_id);
+                error!("Client {}: No fragments found for session {}", self.id, session_id);
                 return None;
             },
         };
@@ -768,7 +723,7 @@ impl ChatClientDanylo {
         let total_n_fragments = match fragments.first() {
             Some(first) => first.total_n_fragments,
             None => {
-                error!("Fragment list is empty for session {}", session_id);
+                error!("Client {}: Fragment list is empty for session {}", self.id, session_id);
                 return None;
             },
         };
@@ -776,7 +731,8 @@ impl ChatClientDanylo {
         // Check if the number of fragments matches the expected total.
         if fragments.len() as u64 != total_n_fragments {
             error!(
-                "Incorrect number of fragments for session {}: expected {}, got {}",
+                "Client {}: Incorrect number of fragments for session {}: expected {}, got {}",
+                self.id,
                 session_id,
                 total_n_fragments,
                 fragments.len()
@@ -795,8 +751,8 @@ impl ChatClientDanylo {
             Ok(string) => string,
             Err(err) => {
                 error!(
-                    "Failed to convert data to string for session {}: {}",
-                    session_id, err
+                    "Client {}: Failed to convert data to string for session {}: {}",
+                    self.id, session_id, err
                 );
                 return None;
             },
@@ -807,8 +763,8 @@ impl ChatClientDanylo {
             Ok(deserialized) => Some(deserialized),
             Err(err) => {
                 error!(
-                    "Failed to deserialize JSON for session {}: {}",
-                    session_id, err
+                    "Client {}: Failed to deserialize JSON for session {}: {}",
+                    self.id, session_id, err
                 );
                 None
             },
@@ -825,8 +781,8 @@ impl ChatClientDanylo {
         };
 
         match result {
-            Ok(_) => info!("Sent '{}' event to controller", event_name),
-            Err(_) => error!("Error sending '{}' event to controller", event_name),
+            Ok(_) => info!("Client {}: Sent '{}' event to controller", self.id, event_name),
+            Err(_) => error!("Client {}: Error sending '{}' event to controller", self.id, event_name),
         }
     }
 }

@@ -18,9 +18,10 @@ use crate::servers::server::Server as ServerTrait;
 
 use crate::clients;
 use crate::clients::Client as ClientTrait;
-use crate::general_use::{ClientCommand, ClientEvent, ClientType, ServerCommand, ServerEvent, ServerType};
+use crate::general_use::{ClientCommand, ClientEvent, ClientType, Response, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
 use crate::ui::start_ui;
+use crate ::new_ui_test::UI;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
@@ -67,6 +68,8 @@ impl NetworkInit {
         let (to_control_event_client, control_get_event_client) = unbounded();
         let (to_control_event_server, control_get_event_server) = unbounded();
 
+        let (ui_response_send, ui_response_recv) = unbounded();
+
 
         //Creating controller
         let mut controller = SimulationController::new(
@@ -83,7 +86,7 @@ impl NetworkInit {
         self.create_drones(config.drone, &mut controller, to_control_event_drone);
 
         //Looping through servers (we have to decide how to split since we have two)
-        self.create_clients(config.client, &mut controller, to_control_event_client);
+        self.create_clients(config.client, &mut controller, to_control_event_client, ui_response_send);
 
         //Looping through Clients
         self.create_servers(config.server, &mut controller, to_control_event_server);
@@ -92,7 +95,7 @@ impl NetworkInit {
         self.connect_nodes(&mut controller, neighbours);
 
         println!("Starting UI");
-        start_ui(controller);
+        UI::new(&mut controller, ui_response_recv).run();
     }
 
 
@@ -134,7 +137,13 @@ impl NetworkInit {
 
     ///CLIENTS GENERATION
 
-    fn create_clients(&mut self, config_client: Vec<Client>, controller: &mut SimulationController, to_contr_event: Sender<ClientEvent> ) {
+    fn create_clients(
+        &mut self,
+        config_client: Vec<Client>,
+        controller: &mut SimulationController,
+        to_contr_event: Sender<ClientEvent>,
+        ui_response_sender: Sender<Response>,
+    ) {
         for client in config_client {
 
             let (to_client_command_sender, client_get_command_recv):(Sender<ClientCommand>,Receiver<ClientCommand>) = unbounded();
@@ -146,6 +155,8 @@ impl NetworkInit {
 
             //Copy of contrEvent
             let copy_contr_event = to_contr_event.clone();
+            //Copy of contrEvent
+            let copy_ui_response_sender = ui_response_sender.clone();
 
             thread::spawn(move || {
                 let mut client = clients::client_danylo::ChatClientDanylo::new(
@@ -154,6 +165,7 @@ impl NetworkInit {
                     packet_receiver,
                     copy_contr_event,
                     client_get_command_recv,
+                    copy_ui_response_sender,
                 );
 
                 client.run();

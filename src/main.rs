@@ -5,12 +5,13 @@ mod network_initializer;
 mod ui;
 mod simulation_controller;
 mod servers;
-use clients::client_danylo::test_gui::test_gui;
+mod new_ui_test;
+
 
 fn main() {
     env_logger::init();
 
-    // test_gui();
     let mut my_net = NetworkInit::new();
-    my_net.parse("input.toml")
+    // my_net.parse("input.toml");
+    my_net.parse("topologies/butterfly.toml");
 }

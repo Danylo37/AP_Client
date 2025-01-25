@@ -8,7 +8,8 @@ use wg_2024::{
 };
 
 pub type Message = String;
-pub type File = String;
+pub type MediaRef = String;
+pub type FileId = u8;
 pub type ServerId = NodeId;
 pub type ClientId = NodeId;
 pub type DroneId = NodeId;
@@ -52,17 +53,20 @@ pub enum ServerCommand {
 pub enum ServerEvent {
 }
 
+
 #[derive(Debug)]
 /// From controller to Client
 pub enum ClientCommand {
     //Controller functions
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
+    SendMessageTo(ClientId, Message),  //if you order a client to send messages to another client you can do it
     RunUI,
     StartFlooding,
     AskTypeTo(ServerId),
-    RequestText(NodeId),
-    RequestMedia(NodeId),
+    RequestListFile(ServerId),   //request the list of the file that the server has.
+    RequestText(ServerId, FileId),  //the type File is alias of String, so we are requesting a Text in the File.
+    RequestMedia(ServerId, MediaRef), //the type Media is alias of String, we are requesting the content referenced by the MediaRef.
     ShortcutPacket(Packet),
     GetKnownServers,
 }
@@ -89,7 +93,7 @@ pub enum Query {
     //To Content Server
     //(Text)
     AskListFiles,
-    AskFile(u8),
+    AskFile(FileId),   //changed to File (String)
     //(Media)
     AskMedia(String), // String is the reference found in the files
 }

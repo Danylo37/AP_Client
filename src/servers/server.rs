@@ -48,27 +48,29 @@ pub trait Server{
                                 self.get_packet_send().remove(&id);
                             }
                             ServerCommand::ShortcutPacket(packet) => {
-                                self.handle_packet(packet);
+                                 match packet.pack_type {
+                                    PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                                    PacketType::Ack(ack) => self.handle_ack(ack),
+                                    PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                                    PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                                    PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                                }
                             }
                         }
                     }
                 },
                 recv(self.get_packet_recv()) -> packet_res => {
                     if let Ok(packet) = packet_res {
-                        self.handle_packet(packet);
+                        match packet.pack_type {
+                            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                            PacketType::Ack(ack) => self.handle_ack(ack),
+                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                        }
                     }
                 },
             }
-        }
-    }
-
-    fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type {
-            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
-            PacketType::Ack(ack) => self.handle_ack(ack),
-            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
-            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
         }
     }
 
@@ -149,16 +151,14 @@ pub trait Server{
 
     //ACK
     fn handle_ack(&mut self, _ack: Ack){
-        //UI stuff I guess?
+        //UI stuff i guess?
     }
 
     fn send_ack(&self, ack: Ack, routing_header: SourceRoutingHeader, session_id: u64) {
-        info!("Sending Ack for session {}", session_id);
         let mut packet= Self::create_packet(PacketType::Ack(ack), routing_header, session_id);
         packet.routing_header.increase_hop_index();
         self.send_packet(packet);
     }
-
 
     //PACKET
     fn create_packet(pack_type: PacketType, routing_header: SourceRoutingHeader, session_id: u64, ) -> Packet {
@@ -170,6 +170,7 @@ pub trait Server{
     }
 
     fn send_packet(&self, packet: Packet) {
+        info!("Sending packet {:?} to node {}", packet, packet.routing_header.hops[1]);
         let first_carrier = self
             .get_packet_send_not_mutable()
             .get(&packet.routing_header.hops[1])
@@ -178,7 +179,7 @@ pub trait Server{
     }
 
     fn find_path_to(&self, _destination_id: NodeId) -> Vec<NodeId>{
-        vec![4,2,1,3]
+        vec![8, 4, 1]
     }
 
     fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader{
@@ -200,6 +201,12 @@ pub trait Server{
             };
             self.send_nack(nack, routing_header.get_reversed(), session_id);
             return;
+        }else{
+            // Send Ack
+            let ack = Ack {
+                fragment_index: fragment.fragment_index,
+            };
+            self.send_ack(ack, routing_header.get_reversed(), session_id);
         }
 
         info!("Handling Fragment {:?}", fragment);
@@ -216,7 +223,7 @@ pub trait Server{
             let offset = reassembling_message.len();
             if offset + fragment.length as usize > reassembling_message.capacity()
             {
-                println!("Nack");
+                info!("Nack");
                 //Maybe cancelling also message in reassembling_message
                 // ... error handling logic ...
                 return;
@@ -227,7 +234,7 @@ pub trait Server{
 
                 // Check if all fragments have been received
                 let reassembling_message_clone = reassembling_message.clone();
-                println!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
+                info!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
                 self.if_all_fragments_received_process(&reassembling_message_clone, &fragment, session_id, routing_header);
             }
 
@@ -257,12 +264,6 @@ pub trait Server{
             let reassembled_data = message.clone(); // Take ownership of the data
             self.get_reassembling_messages().remove(&session_id); // Remove from map
             self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
-
-            // Send Ack
-            let ack = Ack {
-                fragment_index: current_fragment.fragment_index,
-            };
-            self.send_ack(ack, routing_header.get_reversed(), session_id);
             return true;
         }
         false

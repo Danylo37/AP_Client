@@ -1,0 +1,81 @@
+[[client]]
+id = 1
+connected_drone_ids = [3, 4]
+
+[[client]]
+id = 2
+connected_drone_ids = [5, 6]
+
+[[drone]]
+id = 3
+connected_node_ids = [1, 7, 10, 11]
+pdr = 0.04
+
+[[drone]]
+id = 4
+connected_node_ids = [1, 8, 10, 11]
+pdr = 0.05
+
+[[drone]]
+id = 5
+connected_node_ids = [2, 8, 12, 13]
+pdr = 0.05
+
+[[drone]]
+id = 6
+connected_node_ids = [2, 9, 12, 13]
+pdr = 0.03
+
+[[client]]
+id = 7
+connected_drone_ids = [3, 10]
+
+[[server]]
+id = 8
+connected_drone_ids = [4, 5, 11, 12]
+
+[[client]]
+id = 9
+connected_drone_ids = [6, 13]
+
+[[drone]]
+id = 10
+connected_node_ids = [3, 4, 7, 14, 15]
+pdr = 0.03
+
+[[drone]]
+id = 11
+connected_node_ids = [3, 4, 8, 16]
+pdr = 0.06
+
+[[drone]]
+id = 12
+connected_node_ids = [5, 6, 8, 15]
+pdr = 0.06
+
+[[drone]]
+id = 13
+connected_node_ids = [5, 6, 9, 16, 17]
+pdr = 0.05
+
+[[server]]
+id = 14
+connected_drone_ids = [10, 15]
+
+[[drone]]
+id = 15
+connected_node_ids = [10, 12, 14, 18]
+pdr = 0.04
+
+[[drone]]
+id = 16
+connected_node_ids = [11, 13, 17, 18]
+pdr = 0.03
+
+[[server]]
+id = 17
+connected_drone_ids = [13, 16]
+
+[[client]]
+id = 18
+connected_drone_ids = [15, 16]
