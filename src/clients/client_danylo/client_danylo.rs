@@ -22,6 +22,7 @@ use crate::{
 use super::MessageFragments;
 
 pub type Node = (NodeId, NodeType);
+pub type ChatHistory = Vec<(ClientId, Message)>;
 
 pub struct ChatClientDanylo {
     // ID
@@ -51,8 +52,8 @@ pub struct ChatClientDanylo {
     pub messages_to_send: HashMap<SessionId, MessageFragments>,       // Queue of messages to be sent for different sessions
     pub fragments_to_reassemble: HashMap<SessionId, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 
-    // Inbox
-    pub inbox: Vec<(ClientId, Message)>,                              // Messages with their senders
+    // Chats
+    pub chats: HashMap<ClientId, ChatHistory>,                        // Chat histories with other clients
 }
 
 impl Client for ChatClientDanylo {
@@ -81,7 +82,7 @@ impl Client for ChatClientDanylo {
             routes: HashMap::new(),
             messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
-            inbox: Vec::new(),
+            chats: HashMap::new(),
         }
     }
 
@@ -383,7 +384,8 @@ impl ChatClientDanylo {
 
                     self.ui_response_send.send(Response::MessageFrom(from, message.clone())).unwrap();
 
-                    self.inbox.insert(0, (from, message));
+                    let chat = self.chats.entry(from).or_insert_with(Vec::new);
+                    chat.push((from, message));
                 }
                 Response::Err(error) =>
                     error!("Client {}: Error received from server {}: {:?}", self.id, server_id, error),
@@ -574,8 +576,8 @@ impl ChatClientDanylo {
         self.routes.clear();
         self.topology.clear();
 
-        // Generate a new flood ID, incrementing the last one or starting at 1 if none exists.
-        let flood_id = self.flood_ids.last().map_or(1, |last| last + 1);
+        // Generate a new flood ID.
+        let flood_id = self.generate_flood_id();
         self.flood_ids.push(flood_id);
 
         // Create a new flood request initialized with the generated flood ID, the current node's ID, and its type.
@@ -585,8 +587,8 @@ impl ChatClientDanylo {
             NodeType::Client,
         );
 
-        // Generate a new session ID, incrementing the last one or starting at 1 if none exists.
-        let session_id = self.session_ids.last().map_or(1, |last| last + 1);
+        // Generate a new session ID.
+        let session_id = self.generate_session_id();
         self.session_ids.push(session_id);
 
         // Create a new packet with the flood request and session ID.
@@ -607,6 +609,30 @@ impl ChatClientDanylo {
                 self.send_event(ClientEvent::PacketSent(packet.clone()));
             }
         }
+    }
+
+    /// ###### Generates a new session ID.
+    fn generate_session_id(&self) -> SessionId {
+        let next_session_id: SessionId = self
+            .session_ids
+            .last()
+            .map_or(1, |last| last + 1);
+
+        format!("{}{}", self.id, next_session_id)
+            .parse()
+            .unwrap()
+    }
+
+    /// ###### Generates a new flood ID.
+    fn generate_flood_id(&self) -> FloodId {
+        let next_session_id: FloodId = self
+            .flood_ids
+            .last()
+            .map_or(1, |last| last + 1);
+
+        format!("{}{}", self.id, next_session_id)
+            .parse()
+            .unwrap()
     }
 
     /// ###### Requests the type of specified server.
@@ -677,11 +703,13 @@ impl ChatClientDanylo {
 
         info!("Client {}: Sending message to client {} via server {}", self.id, to, server_id);
 
-        let result = self.create_and_send_message(Query::SendMessageTo(to, message), server_id);
+        let result = self.create_and_send_message(Query::SendMessageTo(to, message.clone()), server_id);
 
         match result {
             Ok(_) => {
                 info!("Client {}: Message sent successfully.", self.id);
+                let chat = self.chats.entry(to).or_insert_with(Vec::new);
+                chat.push((self.id, message));
             }
             Err(err) => {
                 error!("Client {}: Failed to send message: {}", self.id, err);
@@ -702,7 +730,7 @@ impl ChatClientDanylo {
         };
 
         // Generate a new session ID.
-        let session_id = self.session_ids.last().map_or(1, |last| last + 1);
+        let session_id = self.generate_session_id();
         self.session_ids.push(session_id);
 
         // Create message (split the message into fragments) and send first fragment.
