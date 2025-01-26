@@ -41,6 +41,8 @@ pub struct ChatClientDanylo {
     pub clients: HashMap<ServerId, Vec<ClientId>>,                    // Available clients on different servers
 
     // Used IDs
+    pub session_id_counter: SessionId,                                // Counter for session IDs
+    pub flood_id_counter: FloodId,                                    // Counter for flood IDs
     pub session_ids: Vec<SessionId>,                                  // Used session IDs
     pub flood_ids: Vec<FloodId>,                                      // Used flood IDs
 
@@ -76,6 +78,8 @@ impl Client for ChatClientDanylo {
             servers: HashMap::new(),
             is_registered: HashMap::new(),
             clients: HashMap::new(),
+            session_id_counter: 0,
+            flood_id_counter: 0,
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
             topology: HashMap::new(),
@@ -212,34 +216,35 @@ impl ChatClientDanylo {
 
         match nack.nack_type {
             NackType::ErrorInRouting(id) => {
-                self.handle_error_in_routing(nack.fragment_index, id, session_id);
+                self.update_topology_and_routes(id);
+                self.update_message_route_and_resend(nack.fragment_index, session_id);
             }
-            NackType::DestinationIsDrone => {
-                // todo
+            NackType::DestinationIsDrone
+            | NackType::UnexpectedRecipient(_) => {
+                self.update_message_route_and_resend(nack.fragment_index, session_id);
             }
-            NackType::UnexpectedRecipient(_recipient_id) => {
-                // todo
+            NackType::Dropped => {
+                self.resend_fragment(nack.fragment_index, session_id);
             }
-            NackType::Dropped => self.resend_fragment(nack.fragment_index, session_id),
         }
     }
 
-    /// ###### Handles an error in routing.
-    /// Updates the network topology and routes based on the error node.
-    /// If a new route is found, it resends the fragment for the specified session.
-    /// Else, it starts the discovery process to find a new route.
-    fn handle_error_in_routing(&mut self,fragment_index: FragmentIndex, error_node: NodeId, session_id: SessionId) {
-        self.update_topology_and_routes(error_node, &session_id);
-        if self.messages_to_send.get(&session_id).unwrap().get_route().is_empty() {
-            self.discovery();
+    /// ###### Updates the message route and resends the fragment.
+    fn update_message_route_and_resend(&mut self, fragment_index: FragmentIndex, session_id: SessionId) {
+        match self.update_message_route(&session_id) {
+            Ok(_) => {
+                self.resend_fragment(fragment_index, session_id);
+            }
+            Err(err) => {
+                error!("Client {}: Impossible to resend fragment: {}", self.id, err);
+            }
         }
-        self.resend_fragment(fragment_index, session_id);
     }
 
-    /// ###### Updates the network topology and routes based on the received NACK.
+    /// ###### Updates the network topology and routes.
     /// Removes the node that caused the error from the topology and routes.
     /// Finds new routes for the servers that need them.
-    fn update_topology_and_routes(&mut self, error_node: NodeId, session_id: &SessionId) {
+    fn update_topology_and_routes(&mut self, error_node: NodeId) {
         // Remove the node that caused the error from the topology.
         for (_, neighbors) in self.topology.iter_mut() {
             neighbors.remove(&error_node);
@@ -247,9 +252,13 @@ impl ChatClientDanylo {
         self.topology.remove(&error_node);
         info!("Client {}: Removed node {} from the topology", self.id, error_node);
 
-        // Remove the routes that contain the node that caused the error.
-        self.routes.retain(|_, path| !path.contains(&error_node));
-        info!("Client {}: Removed node {} from the routes", self.id, error_node);
+        // Replace the paths that contain the node that caused the error with an empty vector.
+        for route in self.routes.values_mut() {
+            if route.contains(&error_node) {
+                *route = Vec::new();
+            }
+        }
+        info!("Client {}: Routes with node {} cleared", self.id, error_node);
 
         // Collect server IDs that need new routes.
         let servers_to_update: Vec<ServerId> = self
@@ -264,29 +273,36 @@ impl ChatClientDanylo {
             if let Some(new_path) = self.find_route_to(server_id) {
                 if let Some(path) = self.routes.get_mut(&server_id) {
                     *path = new_path;
-                    info!("Client {}: Found new route to server {}: {:?}", self.id, server_id, path);
+                    info!("Client {}: Found new route to the server {}: {:?}", self.id, server_id, path);
                 }
             } else {
-                warn!("Client {}: No route found to server {}", self.id, server_id);
+                warn!("Client {}: No route found to the server {}", self.id, server_id);
             }
         }
+    }
 
-        let message = self.messages_to_send.get_mut(session_id).unwrap();
-        let prev_route = message.get_route();
+    /// ###### Updates the route for the message with the specified session ID.
+    /// If the route is not found in `routes`, it initiates the discovery process to find a new route.
+    /// If a new route is found, it updates the message with the new route.
+    /// If no route is found, it returns an error message.
+    fn update_message_route(&mut self, session_id: &SessionId) -> Result<(), String> {
+        let mut message = self.messages_to_send.remove(session_id).unwrap();
+        let dest_id = message.get_route().last().unwrap();
 
-        // Check if the previous route in message to send contains the error node and update the route if necessary.
-        if prev_route.contains(&error_node) {
-            let dest_id = prev_route.last().unwrap();
-            let new_route = self.routes.get(dest_id);
+        if let Some(new_route) = self.routes.get(dest_id) {
+            message.update_route(new_route.clone());
+            self.messages_to_send.insert(*session_id, message);
+            return Ok(());
+        }
 
-            match new_route {
-                Some(route) => {
-                    message.update_route(route.clone())
-                }
-                None => {
-                    message.update_route(Vec::new())
-                }
-            }
+        self.discovery();
+
+        if let Some(new_route) = self.routes.get(dest_id) {
+            message.update_route(new_route.clone());
+            self.messages_to_send.insert(*session_id, message);
+            Ok(())
+        } else {
+            Err(format!("No routes to the server {}", dest_id))
         }
     }
 
@@ -612,25 +628,22 @@ impl ChatClientDanylo {
     }
 
     /// ###### Generates a new session ID.
-    fn generate_session_id(&self) -> SessionId {
-        let next_session_id: SessionId = self
-            .session_ids
-            .last()
-            .map_or(1, |last| last + 1);
-
-        format!("{}{}", self.id, next_session_id)
-            .parse()
-            .unwrap()
+    fn generate_session_id(&mut self) -> SessionId {
+        self.session_id_counter += 1;
+        let next_session_id: SessionId = self.session_id_counter;
+        self.parse_id(next_session_id)
     }
 
     /// ###### Generates a new flood ID.
-    fn generate_flood_id(&self) -> FloodId {
-        let next_session_id: FloodId = self
-            .flood_ids
-            .last()
-            .map_or(1, |last| last + 1);
+    fn generate_flood_id(&mut self) -> FloodId {
+        self.flood_id_counter += 1;
+        let next_flood_id: FloodId = self.flood_id_counter;
+        self.parse_id(next_flood_id)
+    }
 
-        format!("{}{}", self.id, next_session_id)
+    /// ###### Parses the ID by concatenating the client ID and the provided ID.
+    fn parse_id(&self, id: u64) -> u64 {
+        format!("{}{}", self.id, id)
             .parse()
             .unwrap()
     }
@@ -647,7 +660,7 @@ impl ChatClientDanylo {
                 info!("Client {}: Request for server type sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Client {}: Failed to receive server type: {}", self.id, err);
+                error!("Client {}: Failed to send request for server type: {}", self.id, err);
             },
         }
     }
@@ -664,7 +677,7 @@ impl ChatClientDanylo {
                 info!("Client {}: Request to register sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Client {}: Failed to register client: {}", self.id, err);
+                error!("Client {}: Failed to send request to register: {}", self.id, err);
             },
         }
     }
@@ -681,7 +694,7 @@ impl ChatClientDanylo {
                 info!("Client {}: Request for clients list sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Client {}: Failed to get list of clients: {}", self.id, err);
+                error!("Client {}: Failed to send request for clients list: {}", self.id, err);
             },
         }
     }

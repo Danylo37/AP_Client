@@ -9,7 +9,7 @@ pub struct UI<'a> {
     response_recv: Receiver<Response>
 }
 
-impl<'a>  UI<'a> {
+impl<'a> UI<'a> {
     pub fn new(controller: &'a mut SimulationController, response_recv: Receiver<Response>) -> Self {
         Self {
             controller,
@@ -79,7 +79,8 @@ impl<'a>  UI<'a> {
     }
 
     fn crash_drone(&mut self) {
-        println!("Crush drone");
+        println!("Crush drone 11");
+        self.controller.request_drone_crash(11).unwrap()
     }
 
     fn choose_action_client(&mut self, client_id_chose: NodeId) {

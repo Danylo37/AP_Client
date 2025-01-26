@@ -20,7 +20,6 @@ use crate::clients;
 use crate::clients::Client as ClientTrait;
 use crate::general_use::{ClientCommand, ClientEvent, ClientType, Response, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
-use crate::ui::start_ui;
 use crate ::new_ui_test::UI;
 
 pub struct NetworkInit {
