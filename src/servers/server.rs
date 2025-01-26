@@ -1,7 +1,7 @@
 //I am a god
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use log::info;
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
@@ -9,7 +9,7 @@ use wg_2024::{
         Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
     },
 };
-use crate::general_use::{FloodId, Message, Response ,ServerCommand, ServerType};
+use crate::general_use::{FloodId, Message, Response, ServerCommand, ServerType};
 
 
 ///SERVER TRAIT
@@ -46,6 +46,9 @@ pub trait Server{
                             }
                             ServerCommand::RemoveSender(id) => {
                                 self.get_packet_send().remove(&id);
+                            }
+                            ServerCommand::Discover => {
+                                self.discover();
                             }
                             ServerCommand::ShortcutPacket(packet) => {
                                  match packet.pack_type {
@@ -88,7 +91,7 @@ pub trait Server{
         let flood_request = FloodRequest::initialize(
             flood_id,
             self.get_id(),
-            NodeType::Client,
+            NodeType::Server,
         );
 
         // Generate a new session ID, incrementing the last one or starting at 1 if none exists.
@@ -121,7 +124,51 @@ pub trait Server{
     }
 
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
-        println!("{:?}",flood_response);
+        info!("Handling flood response: {:?}", flood_response);
+        println!("Handling flood response: {:?}", flood_response);
+        let path = &flood_response.path_trace;
+
+        self.update_routes_to_clients(path);
+        self.update_topology(path);
+    }
+
+    fn update_routes_to_clients(&mut self, path: &[(NodeId, NodeType)]) {
+        info!("Updating routes to clients with path: {:?}", path);
+        if let Some((id, NodeType::Client)) = path.last() {
+            if self
+                .get_routes()
+                .get(id)
+                .map_or(true, |prev_path| prev_path.len() > path.len())
+            {
+                // Update the routing table with the new, shorter path.
+                self.get_routes().insert(
+                    *id,
+                    path.iter().map(|entry| entry.0.clone()).collect(),
+                );
+                info!("Updated route to client {}: {:?}", id, path);
+            }
+        }
+    }
+
+    fn update_topology(&mut self, path: &[(NodeId, NodeType)]) {
+        info!("Updating topology with path: {:?}", path);
+        for i in 0..path.len() - 1 {
+            let current = path[i].0;
+            let next = path[i + 1].0;
+
+            // Add the connection between the current and next node in both directions.
+            self.get_topology()
+                .entry(current)
+                .or_insert_with(Vec::new)
+                .push(next);
+            info!("Added connection from {} to {}", current, next);
+
+            self.get_topology()
+                .entry(next)
+                .or_insert_with(Vec::new)
+                .push(current);
+            info!("Added connection from {} to {}", next, current);
+        }
     }
 
     //NACK
@@ -178,14 +225,12 @@ pub trait Server{
         first_carrier.send(packet).unwrap();
     }
 
-    fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId>{
-        match destination_id {
-            1 => vec![8, 4, 1],
-            2 => vec![8, 5, 2],
-            7 => vec![8, 4, 10, 7],
-            9 => vec![8, 5, 13, 9],
-            18 => vec![8, 12, 15, 18],
-            _ => vec![],
+    fn find_path_to(&mut self, destination_id: NodeId) -> Vec<NodeId>{
+        if let Some(route) = self.get_routes().get(&destination_id) {
+            route.clone()
+        } else {
+            self.discover();
+            self.get_routes().get(&destination_id).unwrap().clone()
         }
     }
 
