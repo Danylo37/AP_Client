@@ -192,7 +192,7 @@ impl<'a> UI<'a> {
             .get(&client_id)
             .unwrap()
             .0
-            .send(ClientCommand::RequestListClients(server_id))
+            .send(ClientCommand::AskListClients(server_id))
             .unwrap();
 
         match self.response_recv.recv() {

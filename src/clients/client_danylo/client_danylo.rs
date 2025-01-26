@@ -162,7 +162,7 @@ impl ChatClientDanylo {
             ClientCommand::RegisterToServer(server_id) => {
                 self.request_to_register(server_id)
             }
-            ClientCommand::RequestListClients(server_id) => {
+            ClientCommand::AskListClients(server_id) => {
                 self.request_clients_list(server_id)
             }
             _ => {}

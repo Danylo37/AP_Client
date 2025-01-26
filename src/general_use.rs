@@ -46,6 +46,7 @@ pub enum PacketStatus{
 pub enum ServerCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
+    Discover,
     ShortcutPacket(Packet),
 }
 
@@ -65,7 +66,7 @@ pub enum ClientCommand {
     StartFlooding,
     AskTypeTo(ServerId),
     RegisterToServer(ServerId),
-    RequestListClients(ServerId),
+    AskListClients(ServerId),
     RequestListFile(ServerId),   //request the list of the file that the server has.
     RequestText(ServerId, FileId),  //the type File is alias of String, so we are requesting a Text in the File.
     RequestMedia(ServerId, MediaRef), //the type Media is alias of String, we are requesting the content referenced by the MediaRef.
