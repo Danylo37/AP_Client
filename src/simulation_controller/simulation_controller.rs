@@ -8,8 +8,7 @@ use wg_2024::{
     network::NodeId,
     packet::{NodeType, Packet, PacketType}
 };
-use crate::general_use::{ClientCommand, ClientEvent,
-                         ServerCommand, ServerEvent, ServerType, ClientType};
+use crate::general_use::{ClientCommand, ClientEvent, ServerCommand, ServerEvent, ServerType, ClientType, ServerId, Query};
 
 pub struct SimulationState {
     pub nodes: HashMap<NodeId, NodeType>,
@@ -94,6 +93,79 @@ impl SimulationController {
 
     pub fn register_client(&mut self, node_id: NodeId, command_sender: Sender<ClientCommand>, client_type: ClientType) {
         self.command_senders_clients.insert(node_id, (command_sender, client_type));
+    }
+
+    pub fn register_client_on_server(&mut self, client_id: NodeId, server_id: NodeId) -> Result<(), String> {
+        if let Some((client_command_sender, _)) = self.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_command_sender.send(ClientCommand::RegisterToServer(server_id)) {
+                return Err(format!("Failed to send AskServerType command to client {}: {:?}", client_id, e));
+            }
+            Ok(())
+        } else {
+            Err(format!("Client with id {} not found", client_id))
+        }
+    }
+
+    pub fn request_clients_list(&self, client_id: NodeId, server_id: NodeId) -> Result<(), String> {
+        if let Some((client_sender, _)) = self.command_senders_clients.get(&client_id) {
+            if client_sender.send(ClientCommand::AskListClients(server_id)).is_err() {
+                return Err(format!("Failed to send command AskListClients to the client {}.", client_id));
+            }
+            Ok(())
+        } else {
+            Err(format!("Client with ID {} not found", client_id))
+        }
+    }
+
+    pub fn send_message(&self, client_id: NodeId, receiver_client_id: NodeId, msg: String) -> Result<(), String> {  // Removed server_id parameter
+        if let Some((client_sender, _)) = self.command_senders_clients.get(&client_id) {
+            // Send the message to the client without specifying the server
+            if let Err(e) = client_sender.send(ClientCommand::SendMessageTo(receiver_client_id, msg)) {  // Changed ClientCommand
+                return Err(format!("Failed to send SendMessageTo command to client {}: {:?}", client_id, e));  // Error handling
+            }
+            Ok(()) // Return Ok on successful send
+        } else {
+            Err(format!("Client with ID {} not found", client_id))  // Handle the error
+        }
+    }
+
+    pub fn ask_list_files(&self, client_id: NodeId, server_id: ServerId) -> Result<(), String> {
+        if let Some((client_sender, _)) = self.command_senders_clients.get(&client_id) {
+            if client_sender.send(ClientCommand::RequestListFile(server_id)).is_err() {
+                return Err(format!("Failed to send command AskListFiles to the client {}.", client_id));
+            }
+            Ok(())
+        } else {
+            Err(format!("Client with ID {} not found", client_id))
+        }
+    }
+
+    // pub fn ask_file_from_server(&mut self, client_id: NodeId, server_id: NodeId, query: Query) -> Result<(), String> {
+    //     if let Some((client_sender, _)) = self.command_senders_clients.get(&client_id) {
+    //         if let Err(e) = client_sender.send(ClientCommand::RequestText(server_id, match query {
+    //             Query::AskFile(file) => file.parse().unwrap(),
+    //             _ => panic!("Wrong type of Query, supposed to be AskFile"),
+    //         })) {
+    //             return Err(format!("Failed to send command AskFile to client {}: {:?}", client_id, e));
+    //         }
+    //         Ok(())
+    //     }else {
+    //         Err(format!("Client with id {} not found", client_id))
+    //     }
+    // }
+
+    pub fn ask_media_from_server(&mut self, client_id: NodeId, server_id: NodeId, query: Query) -> Result<(), String> {
+        if let Some((client_sender, _)) = self.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_sender.send(ClientCommand::RequestMedia(server_id, match query{
+                Query::AskMedia(reference) => reference,
+                _ => panic!("Wrong type of Query, supposed to be AskMedia")
+            })) {
+                return Err(format!("Failed to send command AskMedia to client {}: {:?}", client_id, e));
+            }
+            Ok(())
+        }else {
+            Err(format!("Client with id {} not found", client_id))
+        }
     }
 
     /// Spawns a new drone.
@@ -306,26 +378,47 @@ impl SimulationController {
 It uses the command_senders map to find the appropriate sender channel.
 */
     pub fn request_drone_crash(&mut self, drone_id: NodeId) -> Result<(), String> {
-        if let Some(command_sender) = self.command_senders_drones.get(&drone_id) {
-            if let Err(e) = command_sender.send(DroneCommand::Crash) { // Error handling
-                eprintln!("Failed to send Crash command to drone {}: {:?}", drone_id, e);
-                return Err(format!("Failed to send Crash command to drone {}: {:?}", drone_id, e));
-            }
-            Ok(())
-        } else {
-            Err(format!("Drone {} not found in controller", drone_id))
-        }
-    }
+        let neighbors = self.state.topology.get(&drone_id).cloned(); // Get drone's neighbors
 
-    pub fn run_client_ui(&self, client_id: NodeId) -> Result<(), String> {
-        if let Some((command_sender, _)) = self.command_senders_clients.get(&client_id) {
-            if let Err(e) = command_sender.send(ClientCommand::RunUI) {
-                return Err(format!("Failed to send RunUI command to client {}: {:?}", client_id, e));
+        if let Some(command_sender) = self.command_senders_drones.get(&drone_id) {
+            if let Err(e) = command_sender.send(DroneCommand::Crash) {
+                eprintln!("Failed to send Crash command to drone {}: {:?}", drone_id, e);
+                return Err(format!("Failed to send Crash command to drone {}: {:?}", drone_id, e)); //Return error if send failed
             }
-            Ok(())
         } else {
-            Err(format!("Client with ID {} not found", client_id))
+            return Err(format!("Drone {} not found in controller", drone_id)); //Return error if drone not found
         }
+        // Remove senders from neighbors.
+        if let Some(neighbors) = neighbors {
+            for neighbor in neighbors {
+                if let Some(NodeType::Drone) = self.state.nodes.get(&neighbor){        //If neighbour is a drone
+                    if let Err(err) = self.remove_sender(neighbor, NodeType::Drone, drone_id){  //Remove the sender
+                        eprintln!("{}", err);
+                    }
+                    if let Some(connected_nodes) = self.state.topology.get_mut(&neighbor) {
+                        connected_nodes.retain(|&id| id != drone_id);
+                    }
+                } else if let Some(NodeType::Client) = self.state.nodes.get(&neighbor){   //If neighbour is a client
+                    if let Err(err) = self.remove_sender(neighbor, NodeType::Client, drone_id){
+                        eprintln!("{}", err);
+                    }
+                    if let Some(connected_nodes) = self.state.topology.get_mut(&neighbor) {
+                        connected_nodes.retain(|&id| id != drone_id);
+                    }
+                } else if let Some(NodeType::Server) = self.state.nodes.get(&neighbor){   //If neighbour is a server
+                    if let Err(err) = self.remove_sender(neighbor, NodeType::Server, drone_id){
+                        eprintln!("{}", err);
+                    }
+                    if let Some(connected_nodes) = self.state.topology.get_mut(&neighbor) {
+                        connected_nodes.retain(|&id| id != drone_id);
+                    }
+                }
+            }
+        }
+        self.state.topology.remove(&drone_id);
+        self.command_senders_drones.remove(&drone_id);
+
+        Ok(())
     }
 
     pub fn get_list_clients(&self) -> Vec<(ClientType, NodeId)> {
@@ -342,11 +435,11 @@ It uses the command_senders map to find the appropriate sender channel.
             .collect()
     }
 
-    pub fn request_known_servers(&mut self, client_id: NodeId) -> Result<(), String> {
+    pub fn request_known_servers(&mut self, client_id: NodeId) -> Result<Vec<(ServerType, NodeId)>, String> {
         if let Some((client_command_sender, _)) = self.command_senders_clients.get(&client_id) {
 
-            if client_command_sender.send(ClientCommand::GetKnownServers).is_err() { // No need to check error here, client should handle it
-                return Err(format!("Client {} disconnected", client_id));//Return err if the client disconnected
+            if client_command_sender.send(ClientCommand::GetKnownServers).is_err() {
+                return Err(format!("Client {} disconnected", client_id));
             }
 
             //wait for KnownServers event
@@ -357,15 +450,21 @@ It uses the command_senders map to find the appropriate sender channel.
                 match event {
                     ClientEvent::KnownServers(servers) => {
                         self.update_known_servers(servers);
-                        Ok(())
+                        let server_options: Vec<(ServerType, NodeId)> = self.command_senders_servers   //Clone servers
+                            .clone()   // Clone the servers vector to avoid the move
+                            .iter()
+                            .map(|(&id, &(_, server_type))| (server_type, id))
+                            .collect();
+                        // Update known servers in the controller and return the list for UI
+                        return Ok(server_options); // Return the processed server list
                     },
-                    _ => Err("Unexpected client event".to_string()),
+                    _ => return Err("Unexpected client event".to_string()),
                 }
             } else {
-                Err(format!("Timeout waiting for KnownServers from client {}", client_id))
+                return Err(format!("Timeout waiting for KnownServers from client {}", client_id))
             }
         } else {
-            Err(format!("Client with ID {} not found", client_id))
+            return Err(format!("Client with ID {} not found", client_id))
         }
     }
 
@@ -381,7 +480,6 @@ It uses the command_senders map to find the appropriate sender channel.
             if start.elapsed() >= timeout {
                 return None; // Timeout
             }
-
             sleep(Duration::from_millis(10));
         }
 
@@ -395,7 +493,7 @@ It uses the command_senders map to find the appropriate sender channel.
             if let Some((sender, _)) = self.command_senders_servers.get(&server_id) { // Check if server already exists in controller
                 self.command_senders_servers.insert(server_id, (sender.clone(), server_type)); //Update server type
             } else {                                                                           //If server not found create it
-                let (sender, _receiver) = unbounded();                                           //Create channels for server
+                let (sender, receiver) = unbounded();        //Create channels for server
                 self.command_senders_servers.insert(server_id, (sender, server_type));           //Insert server in controller
             }
         }

@@ -51,14 +51,18 @@ impl NetworkInit {
 
         //Splitting information - getting data about neighbours
         let mut neighbours: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+        let mut nodes: HashMap<NodeId, NodeType> = HashMap::new();
         for drone in &config.drone{
             neighbours.insert(drone.id, drone.connected_node_ids.clone());
+            nodes.insert(drone.id, NodeType::Drone);
         }
         for client in &config.client{
             neighbours.insert(client.id, client.connected_drone_ids.clone());
+            nodes.insert(client.id, NodeType::Client);
         }
         for server in &config.server{
             neighbours.insert(server.id, server.connected_drone_ids.clone());
+            nodes.insert(server.id, NodeType::Server);
         }
 
 
@@ -80,6 +84,8 @@ impl NetworkInit {
             control_get_event_server
         );
 
+        controller.state.topology = neighbours.clone();
+        controller.state.nodes = nodes;
 
         //Looping to get Drones
         self.create_drones(config.drone, &mut controller, to_control_event_drone);
