@@ -221,6 +221,7 @@ impl ChatClientDanylo {
             }
             NackType::DestinationIsDrone
             | NackType::UnexpectedRecipient(_) => {
+                // Impossible errors
                 self.update_message_route_and_resend(nack.fragment_index, session_id);
             }
             NackType::Dropped => {
@@ -282,24 +283,14 @@ impl ChatClientDanylo {
     }
 
     /// ###### Updates the route for the message with the specified session ID.
-    /// If the route is not found in `routes`, it initiates the discovery process to find a new route.
     /// If a new route is found, it updates the message with the new route.
     /// If no route is found, it returns an error message.
     fn update_message_route(&mut self, session_id: &SessionId) -> Result<(), String> {
-        let mut message = self.messages_to_send.remove(session_id).unwrap();
+        let message = self.messages_to_send.get_mut(session_id).unwrap();
         let dest_id = message.get_route().last().unwrap();
 
         if let Some(new_route) = self.routes.get(dest_id) {
             message.update_route(new_route.clone());
-            self.messages_to_send.insert(*session_id, message);
-            return Ok(());
-        }
-
-        self.discovery();
-
-        if let Some(new_route) = self.routes.get(dest_id) {
-            message.update_route(new_route.clone());
-            self.messages_to_send.insert(*session_id, message);
             Ok(())
         } else {
             Err(format!("No routes to the server {}", dest_id))
