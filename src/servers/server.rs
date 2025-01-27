@@ -47,33 +47,29 @@ pub trait Server{
                             ServerCommand::RemoveSender(id) => {
                                 self.get_packet_send().remove(&id);
                             }
-                            ServerCommand::Discover => {
-                                self.discover();
-                            }
                             ServerCommand::ShortcutPacket(packet) => {
-                                 match packet.pack_type {
-                                    PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
-                                    PacketType::Ack(ack) => self.handle_ack(ack),
-                                    PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
-                                    PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-                                    PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
-                                }
+                                self.handle_packet(packet);
                             }
+                            _ =>{},
                         }
                     }
                 },
                 recv(self.get_packet_recv()) -> packet_res => {
                     if let Ok(packet) = packet_res {
-                        match packet.pack_type {
-                            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
-                            PacketType::Ack(ack) => self.handle_ack(ack),
-                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
-                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
-                        }
+                        self.handle_packet(packet)
                     }
                 },
             }
+        }
+    }
+
+    fn handle_packet(&mut self, packet: Packet) {
+        match packet.pack_type {
+            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+            PacketType::Ack(ack) => self.handle_ack(ack),
+            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
         }
     }
 
@@ -84,7 +80,7 @@ pub trait Server{
         self.get_routes().clear();
         self.get_topology().clear();
 
-        let flood_id = self.get_flood_id();
+        let flood_id = self.generate_unique_flood_id();
         self.push_flood_id(flood_id);
 
         // Create a new flood request initialized with the generated flood ID, the current node's ID, and its type.
@@ -94,8 +90,7 @@ pub trait Server{
             NodeType::Server,
         );
 
-        // Generate a new session ID, incrementing the last one or starting at 1 if none exists.
-        let session_id = self.get_session_id();
+        let session_id = self.generate_unique_session_id();
 
         // Create a new packet with the flood request and session ID.
         let packet = Packet::new_flood_request(
@@ -197,7 +192,7 @@ pub trait Server{
 
     //ACK
     fn handle_ack(&mut self, _ack: Ack){
-        //UI stuff i guess?
+        //UI stuff I guess?
     }
 
     fn send_ack(&self, ack: Ack, routing_header: SourceRoutingHeader, session_id: u64) {
@@ -216,7 +211,6 @@ pub trait Server{
     }
 
     fn send_packet(&self, packet: Packet) {
-        info!("Sending packet {:?} to node {}", packet, packet.routing_header.hops[1]);
         let first_carrier = self
             .get_packet_send_not_mutable()
             .get(&packet.routing_header.hops[1])
@@ -224,13 +218,8 @@ pub trait Server{
         first_carrier.send(packet).unwrap();
     }
 
-    fn find_path_to(&mut self, destination_id: NodeId) -> Vec<NodeId>{
-        if let Some(route) = self.get_routes().get(&destination_id) {
-            route.clone()
-        } else {
-            self.discover();
-            self.get_routes().get(&destination_id).unwrap().clone()
-        }
+    fn find_path_to(&self, _destination_id: NodeId) -> Vec<NodeId>{
+        vec![4,2,1,3]
     }
 
     fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader{
@@ -360,6 +349,7 @@ pub trait Server{
     }
 
     fn send_again_fragment(&mut self, session_id: u64, fragment_index: u64){
+
         //Getting right message and destination id
         let message_and_destination = self.get_sending_messages_not_mutable().get(&session_id).unwrap();
 
@@ -439,9 +429,9 @@ pub trait Server{
     }
 
     fn generate_unique_session_id(&mut self) -> u64 {
-        let counter_flood_id = self.get_flood_id();
+        let counter_session_id = self.get_session_id();
         let id = self.get_id();
-        match format!("{}{}", id, counter_flood_id).parse() {
+        match format!("{}{}", id, counter_session_id).parse() {
             Ok(id) => id,
             Err(e) => panic!("{}, Not right number", e)
         }
@@ -459,10 +449,11 @@ pub trait CommunicationServer {
 ///Content Server functions
 pub trait TextServer {
     fn give_list_back(&mut self, client_id: NodeId);
-    fn give_file_back(&mut self, client_id: NodeId, file_id: u8);
+    fn give_file_back(&mut self, client_id: NodeId,  file_key: String);
 }
 
 ///Media server functions
 pub trait MediaServer {
     fn give_media_back(&mut self, client_id: NodeId, reference: String);
 }
+
