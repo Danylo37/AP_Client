@@ -93,7 +93,7 @@ impl NetworkInit {
         //Connecting the Nodes
         self.connect_nodes(&mut controller, neighbours);
 
-        // controller.command_senders_servers.get(&8).unwrap().0.send(ServerCommand::Discover).unwrap();
+        controller.command_senders_servers.get(&8).unwrap().0.send(ServerCommand::Discover).unwrap();
         println!("Starting UI");
         UI::new(&mut controller, ui_response_recv).run();
     }

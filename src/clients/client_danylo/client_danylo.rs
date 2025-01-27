@@ -668,6 +668,14 @@ impl ChatClientDanylo {
     /// ###### Requests to register the client on a specified server.
     /// Sends a registration query to the server and waits for a response.
     pub fn request_to_register(&mut self, server_id: ServerId) {
+        if let Some(is_registered) = self.is_registered.get(&server_id) {
+            if *is_registered {
+                info!("Client {}: Already registered on server {}", self.id, server_id);
+                self.ui_response_send.send(Response::Err("Already registered".to_string())).unwrap();
+                return;
+            }
+        }
+
         info!("Client {}: Requesting to register on server {}", self.id, server_id);
 
         let result = self.create_and_send_message(Query::RegisterClient(self.id), server_id);

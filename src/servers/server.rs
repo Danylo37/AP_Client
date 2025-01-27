@@ -125,7 +125,6 @@ pub trait Server{
 
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
         info!("Handling flood response: {:?}", flood_response);
-        println!("Handling flood response: {:?}", flood_response);
         let path = &flood_response.path_trace;
 
         self.update_routes_to_clients(path);

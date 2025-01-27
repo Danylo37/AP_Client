@@ -20,7 +20,7 @@ impl<'a> UI<'a> {
     pub fn run(&mut self) {
         loop {
             println!(
-                "Choose an option\n\
+                "\nChoose an option\n\
                 1. Use clients\n\
                 2. Crashing a drone\n\
                 0. Exit"
@@ -173,6 +173,9 @@ impl<'a> UI<'a> {
                 match response {
                     Response::ClientRegistered => {
                         println!("Client registered to server {} successfully", server_id);
+                    }
+                    Response::Err(err) => {
+                        println!("Error registering to server: {}", err);
                     }
                     _ => {
                         println!("Unexpected response");
