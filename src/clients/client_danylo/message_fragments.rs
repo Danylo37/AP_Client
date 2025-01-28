@@ -9,7 +9,6 @@ use wg_2024::{
 /// ###### Represents a message that is fragmented into smaller pieces for transmission.
 pub struct MessageFragments {
     fragments: Vec<Fragment>,
-    last_fragment_index: usize,
     session_id: u64,
     route: Vec<NodeId>,
 }
@@ -19,7 +18,6 @@ impl MessageFragments {
     pub fn new(session_id: u64, route: Vec<NodeId>) -> MessageFragments {
         Self {
             fragments: Vec::new(),
-            last_fragment_index: 0,
             session_id,
             route,
         }
@@ -71,11 +69,6 @@ impl MessageFragments {
         } else {
             None
         }
-    }
-
-    /// ###### Increments the index of the last processed or sent fragment.
-    pub fn increment_last_index(&mut self) {
-        self.last_fragment_index += 1;
     }
 
     /// ###### Retrieves the route for the message fragments.

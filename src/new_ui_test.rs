@@ -79,8 +79,8 @@ impl<'a> UI<'a> {
     }
 
     fn crash_drone(&mut self) {
-        println!("Crush drone 12");
-        self.controller.request_drone_crash(12).unwrap()
+        println!("Crush drone 15");
+        self.controller.request_drone_crash(15).unwrap()
     }
 
     fn choose_action_client(&mut self, client_id_chose: NodeId) {

@@ -17,42 +17,42 @@ use crate::{
 };
 use super::MessageFragments;
 
-pub type Node = (NodeId, NodeType);
-pub type ChatHistory = Vec<(ClientId, Message)>;
+pub(super) type Node = (NodeId, NodeType);
+pub(crate) type ChatHistory = Vec<(ClientId, Message)>;
 
 pub struct ChatClientDanylo {
     // ID
-    pub id: ClientId,                                                 // Client ID
+    pub(super) id: ClientId,                                                 // Client ID
 
     // Channels
-    pub packet_send: HashMap<NodeId, Sender<Packet>>,                 // Neighbor's packet sender channels
-    pub packet_recv: Receiver<Packet>,                                // Packet receiver channel
-    pub controller_send: Sender<ClientEvent>,                         // Event sender channel
-    pub controller_recv: Receiver<ClientCommand>,                     // Command receiver channel
-    pub ui_response_send: Sender<Response>,                           // UI response sender channel
+    pub(super) packet_send: HashMap<NodeId, Sender<Packet>>,                 // Neighbor's packet sender channels
+    pub(super) packet_recv: Receiver<Packet>,                                // Packet receiver channel
+    pub(super) controller_send: Sender<ClientEvent>,                         // Event sender channel
+    pub(super) controller_recv: Receiver<ClientCommand>,                     // Command receiver channel
+    ui_response_send: Sender<Response>,
 
     // Servers and clients
-    pub servers: HashMap<ServerId, ServerType>,                       // IDs and types of the available servers
-    pub is_registered: HashMap<ServerId, bool>,                       // Registration status on servers
-    pub clients: HashMap<ServerId, Vec<ClientId>>,                    // Available clients on different servers
+    pub(super) servers: HashMap<ServerId, ServerType>,                       // IDs and types of the available servers
+    pub(super) is_registered: HashMap<ServerId, bool>,                       // Registration status on servers
+    pub(super) clients: HashMap<ServerId, Vec<ClientId>>,                    // Available clients on different servers
 
     // Used IDs
-    pub session_id_counter: SessionId,                                // Counter for session IDs
-    pub flood_id_counter: FloodId,                                    // Counter for flood IDs
-    pub session_ids: Vec<SessionId>,                                  // Used session IDs
-    pub flood_ids: Vec<FloodId>,                                      // Used flood IDs
+    pub(super) session_id_counter: SessionId,                                // Counter for session IDs
+    pub(super) flood_id_counter: FloodId,                                    // Counter for flood IDs
+    pub(super) session_ids: Vec<SessionId>,                                  // Used session IDs
+    pub(super) flood_ids: Vec<FloodId>,                                      // Used flood IDs
 
     // Network
-    pub topology: HashMap<NodeId, HashSet<NodeId>>,                   // Nodes and their neighbours
-    pub routes: HashMap<ServerId, Vec<NodeId>>,                       // Routes to the servers
+    pub(super) topology: HashMap<NodeId, HashSet<NodeId>>,                   // Nodes and their neighbours
+    pub(super) routes: HashMap<ServerId, Vec<NodeId>>,                       // Routes to the servers
 
     // Message queues
-    pub messages_to_send: HashMap<SessionId, MessageFragments>,       // Queue of messages to be sent for different sessions
-    pub fragments_to_reassemble: HashMap<SessionId, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
-    pub queries_to_resend: VecDeque<(ServerId, Query)>,               // Queue of queries to resend
+    pub(super) messages_to_send: HashMap<SessionId, MessageFragments>,       // Queue of messages to be sent for different sessions
+    pub(super) fragments_to_reassemble: HashMap<SessionId, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    pub(super) queries_to_resend: VecDeque<(ServerId, Query)>,               // Queue of queries to resend
 
     // Chats
-    pub chats: HashMap<ClientId, ChatHistory>,                        // Chat histories with other clients
+    pub(super) chats: HashMap<ClientId, ChatHistory>,                        // Chat histories with other clients
 }
 
 impl Client for ChatClientDanylo {
@@ -109,7 +109,7 @@ impl Client for ChatClientDanylo {
 
 impl ChatClientDanylo {
     /// ###### Handles incoming packets and delegates them to the appropriate handler based on the packet type.
-    pub(crate) fn handle_packet(&mut self, packet: Packet) {
+    pub(super) fn handle_packet(&mut self, packet: Packet) {
         debug!("Client {}: Handling packet: {:?}", self.id, packet);
 
         match packet.pack_type.clone() {
@@ -129,7 +129,7 @@ impl ChatClientDanylo {
     }
 
     /// ###### Handles incoming commands.
-    pub(crate) fn handle_command(&mut self, command: ClientCommand) {
+    pub(super) fn handle_command(&mut self, command: ClientCommand) {
         debug!("Client {}: Handling command: {:?}", self.id, command);
 
         match command {
@@ -139,6 +139,7 @@ impl ChatClientDanylo {
             }
             ClientCommand::RemoveSender(id) => {
                 self.packet_send.remove(&id);
+                self.update_topology_and_routes(id);
                 info!("Client {}: Removed sender for node {}", self.id, id);
             }
             ClientCommand::ShortcutPacket(packet) => {
@@ -169,7 +170,7 @@ impl ChatClientDanylo {
 
     /// ###### Handles the 'GetKnownServers' command.
     /// Sends the list of known servers to the simulation controller.
-    fn handle_get_known_servers(&mut self) {
+    pub(super) fn handle_get_known_servers(&mut self) {
         let servers: Vec<(ServerId, ServerType, bool)> = self
             .servers
             .iter()
@@ -195,7 +196,6 @@ impl ChatClientDanylo {
         // Check if there is a next fragment to send.
         if let Some(next_fragment) = message.get_fragment_packet((fragment_index + 1) as usize) {
             // Prepare and send the next fragment if available.
-            message.increment_last_index();
             match self.send_to_next_hop(next_fragment) {
                 Ok(_) => info!("Client {}: Sent next fragment for session {}", self.id, session_id),
                 Err(err) => error!("Client {}: Failed to send next fragment for session {}: {}", self.id, session_id, err),
@@ -243,7 +243,7 @@ impl ChatClientDanylo {
     /// ###### Updates the network topology and routes.
     /// Removes the node that caused the error from the topology and routes.
     /// Finds new routes for the servers that need them.
-    fn update_topology_and_routes(&mut self, error_node: NodeId) {
+    pub(super) fn update_topology_and_routes(&mut self, error_node: NodeId) {
         // Remove the node that caused the error from the topology.
         for (_, neighbors) in self.topology.iter_mut() {
             neighbors.remove(&error_node);
@@ -606,7 +606,7 @@ impl ChatClientDanylo {
 
     /// ###### Initiates the discovery process to find available servers and clients.
     /// Clears current data structures and sends a flood request to all neighbors.
-    pub fn discovery(&mut self) {
+    pub(super) fn discovery(&mut self) {
         info!("Client {}: Starting discovery process", self.id);
 
         // Clear all current data structures related to topology.
@@ -671,7 +671,7 @@ impl ChatClientDanylo {
 
     /// ###### Requests the type of specified server.
     /// Sends a query to the server and waits for a response.
-    pub fn request_server_type(&mut self, server_id: ServerId) {
+    pub(super) fn request_server_type(&mut self, server_id: ServerId) {
         info!("Client {}: Requesting server type for server {}", self.id, server_id);
 
         let result = self.create_and_send_message(Query::AskType, server_id);
@@ -694,7 +694,7 @@ impl ChatClientDanylo {
 
     /// ###### Requests to register the client on a specified server.
     /// Sends a registration query to the server and waits for a response.
-    pub fn request_to_register(&mut self, server_id: ServerId) {
+    pub(super) fn request_to_register(&mut self, server_id: ServerId) {
         if let Some(is_registered) = self.is_registered.get(&server_id) {
             if *is_registered {
                 info!("Client {}: Already registered on server {}", self.id, server_id);
@@ -725,7 +725,7 @@ impl ChatClientDanylo {
 
     /// ###### Requests the list of clients from a specified server.
     /// Sends a query to the server and waits for a response.
-    pub fn request_clients_list(&mut self, server_id: ServerId) {
+    pub(super) fn request_clients_list(&mut self, server_id: ServerId) {
         info!("Client {}: Requesting clients list from server {}", self.id, server_id);
 
         let result = self.create_and_send_message(Query::AskListClients, server_id);
@@ -748,7 +748,7 @@ impl ChatClientDanylo {
 
     /// ###### Sends a message to a specified client via a specified server.
     /// Sends the message and waits for a response.
-    pub fn send_message_to(&mut self, to: ClientId, message: Message) {
+    pub(super) fn send_message_to(&mut self, to: ClientId, message: Message) {
         let option_server_id = self.clients.iter()
             .find(|(_, clients)| clients.contains(&to))
             .map(|(server_id, _)| *server_id);
@@ -892,6 +892,7 @@ impl ChatClientDanylo {
         let event_name = match event {
             ClientEvent::PacketSent(_) => "PacketSent",
             ClientEvent::KnownServers(_) => "KnownServers",
+            _ => "Unknown",
         };
 
         match result {
