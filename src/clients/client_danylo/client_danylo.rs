@@ -1,11 +1,7 @@
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    fmt::Debug,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{info, debug, warn, error};
-use serde::Serialize;
 
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
@@ -53,6 +49,7 @@ pub struct ChatClientDanylo {
     // Message queues
     pub messages_to_send: HashMap<SessionId, MessageFragments>,       // Queue of messages to be sent for different sessions
     pub fragments_to_reassemble: HashMap<SessionId, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    pub queries_to_resend: VecDeque<(ServerId, Query)>,               // Queue of queries to resend
 
     // Chats
     pub chats: HashMap<ClientId, ChatHistory>,                        // Chat histories with other clients
@@ -86,6 +83,7 @@ impl Client for ChatClientDanylo {
             routes: HashMap::new(),
             messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
+            queries_to_resend: VecDeque::new(),
             chats: HashMap::new(),
         }
     }
@@ -524,33 +522,9 @@ impl ChatClientDanylo {
 
         let path = &flood_response.path_trace;
 
-        self.update_routes_and_servers(path);
         self.update_topology(path);
+        self.update_routes_and_servers(path);
 
-    }
-
-    /// ###### Updates the routes and servers based on the provided path.
-    /// If the path leads to a server, it updates the routing table and the servers list.
-    fn update_routes_and_servers(&mut self, path: &[Node]) {
-        if let Some((id, NodeType::Server)) = path.last() {
-            if self
-                .routes
-                .get(id)
-                .map_or(true, |prev_path| prev_path.len() > path.len())
-            {
-                // Add the server to the servers list with an undefined type if it is not already present.
-                if !self.servers.contains_key(id) {
-                    self.servers.insert(*id, ServerType::Undefined);
-                }
-
-                // Update the routing table with the new, shorter path.
-                self.routes.insert(
-                    *id,
-                    path.iter().map(|entry| entry.0.clone()).collect(),
-                );
-                info!("Client {}: Updated route to server {}: {:?}", self.id, id, path);
-            }
-        }
     }
 
     /// ###### Updates the network topology based on the provided path.
@@ -572,6 +546,62 @@ impl ChatClientDanylo {
                 .insert(current);
         }
         debug!("Client {}: Updated topology with path: {:?}", self.id, path);
+    }
+
+    /// ###### Updates the routes and servers based on the provided path.
+    /// If the path leads to a server, it updates the routing table and the servers list.
+    /// If there are queries waiting for the route to the server, it resends them.
+    fn update_routes_and_servers(&mut self, path: &[Node]) {
+        if let Some((id, NodeType::Server)) = path.last() {
+            if self
+                .routes
+                .get(id)
+                .map_or(true, |prev_path| prev_path.len() > path.len())
+            {
+                // Add the server to the servers list with an undefined type if it is not already present.
+                if !self.servers.contains_key(id) {
+                    self.servers.insert(*id, ServerType::Undefined);
+                }
+
+                // Update the routing table with the new, shorter path.
+                self.routes.insert(
+                    *id,
+                    path.iter().map(|entry| entry.0.clone()).collect(),
+                );
+                info!("Client {}: Updated route to server {}: {:?}", self.id, id, path);
+
+                // Resend queries that were waiting for the route to the server.
+                if !self.queries_to_resend.is_empty() {
+                    self.resend_queries();
+                }
+            }
+        }
+    }
+
+    /// ###### Resends queries that were waiting for the route to the server.
+    /// Iterates over the queries to resend and sends them to the corresponding servers.
+    /// If the server is not in the routing table, the query is not resent.
+    /// If the query is successfully sent, it is removed from the queue.
+    fn resend_queries(&mut self) {
+        let queries = self.queries_to_resend.clone();
+
+        for (server_id, query) in queries {
+
+            if !self.routes.contains_key(&server_id) {
+                return;
+            }
+
+            match self.create_and_send_message(query.clone(), server_id) {
+                Ok(_) => {
+                    info!("Client {}: Query {:?} resent successfully", self.id, query);
+                    self.queries_to_resend.pop_front();
+                }
+                Err(err) => {
+                    error!("Client {}: Failed to resend query {:?}: {}",
+                        self.id, query, err);
+                }
+            };
+        }
     }
 
     /// ###### Initiates the discovery process to find available servers and clients.
@@ -651,7 +681,13 @@ impl ChatClientDanylo {
                 info!("Client {}: Request for server type sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Client {}: Failed to send request for server type: {}", self.id, err);
+                let error_string = format!("Client {}: Failed to send request for server type: {}", self.id, err);
+
+                if err == "Topology is empty. Discovery started and the query will be resent" {
+                    warn!("{}", error_string);
+                } else {
+                    error!("{}", error_string);
+                }
             },
         }
     }
@@ -676,7 +712,13 @@ impl ChatClientDanylo {
                 info!("Client {}: Request to register sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Client {}: Failed to send request to register: {}", self.id, err);
+                let error_string = format!("Client {}: Failed to send request to register: {}", self.id, err);
+
+                if err == "Topology is empty. Discovery started and the query will be resent" {
+                    warn!("{}", error_string);
+                } else {
+                    error!("{}", error_string);
+                }
             },
         }
     }
@@ -693,7 +735,13 @@ impl ChatClientDanylo {
                 info!("Client {}: Request for clients list sent successfully.", self.id);
             }
             Err(err) => {
-                error!("Client {}: Failed to send request for clients list: {}", self.id, err);
+                let error_string = format!("Client {}: Failed to send request for clients list: {}", self.id, err);
+
+                if err == "Topology is empty. Discovery started and the query will be resent" {
+                    warn!("{}", error_string);
+                } else {
+                    error!("{}", error_string);
+                }
             },
         }
     }
@@ -724,19 +772,35 @@ impl ChatClientDanylo {
                 chat.push((self.id, message));
             }
             Err(err) => {
-                error!("Client {}: Failed to send message: {}", self.id, err);
+                let error_string = format!("Client {}: Failed to send message: {}", self.id, err);
+
+                if err == "Topology is empty. Discovery started and the query will be resent" {
+                    warn!("{}", error_string);
+                } else {
+                    error!("{}", error_string);
+                }
             },
         }
     }
 
     /// ###### Creates and sends a message to a specified server.
     /// Serializes the data, splits it into fragments, and sends the first fragment.
-    fn create_and_send_message<T: Serialize + Debug>(&mut self, data: T, server_id: ServerId) -> Result<(), String> {
-        debug!("Client {}: Creating and sending message to server {}: {:?}", self.id, server_id, data);
+    fn create_and_send_message(&mut self, query: Query, server_id: ServerId) -> Result<(), String> {
+        debug!("Client {}: Creating and sending message to server {}: {:?}", self.id, server_id, query);
 
-        // Find or create a route.
+        // Check if the topology is empty and start the discovery process if it is.
+        if self.topology.is_empty() {
+            self.discovery();
+            self.queries_to_resend.push_back((server_id, query));
+            return Err("Topology is empty. Discovery started and the query will be resent".to_string());
+        }
+
+        // Find a route to the server or use the cached route if available.
         let hops = if let Some(route) = self.routes.get(&server_id) {
             route.clone()
+        } else if let Some(route) = self.find_route_to(server_id) {
+            self.routes.insert(server_id, route.clone());
+            route
         } else {
             return Err(format!("No routes to the server with id {server_id}"));
         };
@@ -745,9 +809,9 @@ impl ChatClientDanylo {
         let session_id = self.generate_session_id();
         self.session_ids.push(session_id);
 
-        // Create message (split the message into fragments) and send first fragment.
+        // Create message (split the query into fragments) and send first fragment.
         let mut message = MessageFragments::new(session_id, hops);
-        if message.create_message_of(data) {
+        if message.create_message_of(query) {
             self.messages_to_send.insert(session_id, message.clone());
             self.send_to_next_hop(message.get_fragment_packet(0).unwrap())
         } else {
