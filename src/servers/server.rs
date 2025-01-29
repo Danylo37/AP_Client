@@ -1,8 +1,8 @@
 //I am a god
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet};
-use log::info;
+use std::collections::{HashMap, HashSet, VecDeque};
+use log::{error, info};
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
@@ -47,6 +47,7 @@ pub trait Server{
                                 self.discover();
                             }
                             ServerCommand::RemoveSender(id) => {
+                                self.update_topology_and_routes(id);
                                 self.get_packet_send().remove(&id);
                             }
                             ServerCommand::ShortcutPacket(packet) => {
@@ -169,18 +170,16 @@ pub trait Server{
     fn handle_nack(&mut self, nack: Nack, session_id: u64){
         match nack.nack_type {
             NackType::UnexpectedRecipient(_) => {
-                self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
             NackType::Dropped => {
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
             NackType::DestinationIsDrone => {
-                self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
-            NackType::ErrorInRouting(_) => {
-                self.discover();
+            NackType::ErrorInRouting(error_node) => {
+                self.update_topology_and_routes(error_node);
                 self.send_again_fragment(session_id, nack.fragment_index);
             }
         }
@@ -346,6 +345,75 @@ pub trait Server{
 
             self.send_packet(packet);
         }
+    }
+
+    fn update_topology_and_routes(&mut self, error_node: NodeId) {
+        // Remove the node that caused the error from the topology.
+        for (_, neighbors) in self.get_topology().iter_mut() {
+            neighbors.remove(&error_node);
+        }
+        self.get_topology().remove(&error_node);
+        info!("Server {}: Removed node {} from the topology", self.get_id(), error_node);
+
+        // Replace the paths that contain the node that caused the error with an empty vector.
+        for route in self.get_routes().values_mut() {
+            if route.contains(&error_node) {
+                *route = Vec::new();
+            }
+        }
+        info!("Server {}: Routes with node {} cleared", self.get_id(), error_node);
+
+        // Collect server IDs that need new routes.
+        let clients_to_update: Vec<NodeId> = self
+            .get_routes()
+            .iter()
+            .filter(|(_, path)| path.is_empty())
+            .map(|(client_id, _)| *client_id)
+            .collect();
+
+        // Find new routes for the collected client IDs.
+        for client_id in clients_to_update {
+            if let Some(new_path) = self.bfs_search(client_id) {
+                if let Some(path) = self.get_routes().get_mut(&client_id) {
+                    *path = new_path;
+                }
+            } else {
+                error!("Server {}: No route found to the client {}", self.get_id(), client_id);
+            }
+        }
+    }
+
+    fn bfs_search(&mut self, client_id: NodeId) -> Option<Vec<NodeId>> {
+        // Initialize a queue for breadth-first search and a set to track visited nodes.
+        let mut queue: VecDeque<(NodeId, Vec<NodeId>)> = VecDeque::new();
+        let mut visited: HashSet<NodeId> = HashSet::new();
+
+        // Start from the current node with an initial path containing just the current node.
+        queue.push_back((self.get_id(), vec![self.get_id()]));
+
+        // Perform breadth-first search.
+        while let Some((current, path)) = queue.pop_front() {
+            // If the destination node is reached, return the path.
+            if current == client_id {
+                return Some(path);
+            }
+
+            // Mark the current node as visited.
+            visited.insert(current);
+
+            // Explore the neighbors of the current node.
+            if let Some(neighbors) = self.get_topology().get(&current) {
+                for neighbor in neighbors {
+                    // Only visit unvisited neighbors.
+                    if !visited.contains(&neighbor) {
+                        let mut new_path = path.clone();
+                        new_path.push(*neighbor); // Extend the path to include the neighbor.
+                        queue.push_back((*neighbor, new_path)); // Add the neighbor to the queue.
+                    }
+                }
+            }
+        }
+        None    // Return None if no path to the server is found.
     }
 
     fn send_again_fragment(&mut self, session_id: u64, fragment_index: u64){
