@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use wg_2024::{
     network::NodeId,
-    packet::Packet,
+    packet::{Packet, NodeType},
 };
-use crate::clients::client_danylo::ChatHistory;
 
 pub type Message = String;
 pub type MediaRef = String;
@@ -16,12 +15,13 @@ pub type ServerId = NodeId;
 pub type ClientId = NodeId;
 pub type DroneId = NodeId;
 pub type InitiatorId = NodeId;
+pub type DestinationId = NodeId;
 pub type SessionId = u64;
 pub type FloodId = u64;
 pub type FragmentIndex = u64;
 pub type UsingTimes = u64;  //to measure traffic of fragments in a path.
-
-
+pub type ChatHistory = Vec<(ClientId, Message)>;
+pub type Node = (NodeId, NodeType);
 
 ///all the monitoring data
 #[derive(Debug, Serialize, Clone)]
@@ -119,10 +119,9 @@ pub enum PacketStatus{
 pub enum ServerCommand {
     //for monitoring
     UpdateMonitoringData,
-
+    Discover,
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
-    Discover,
     ShortcutPacket(Packet),
 }
 
@@ -135,7 +134,7 @@ pub enum ServerEvent {
     MediaServerData(InitiatorId, DisplayDataMediaServer, DataScope),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum DataScope{
     UpdateAll,
     UpdateSelf,
@@ -161,6 +160,10 @@ pub enum ClientCommand {
     GetKnownServers,
     RegisterToServer(ServerId),
     AskListClients(ServerId),
+
+
+    //commands for testing
+    RequestRoutes(DestinationId),
 }
 
 
@@ -172,6 +175,7 @@ pub enum ClientEvent {
 
     PacketSent(Packet),
     KnownServers(Vec<(NodeId, ServerType, bool)>),
+
 }
 
 //Queries (Client -> Server)
