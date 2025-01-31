@@ -165,7 +165,7 @@ impl NetworkInit {
             let copy_ui_response_sender = ui_response_sender.clone();
 
             thread::spawn(move || {
-                let mut client = clients::client_danylo::ChatClientDanylo::new(
+                let mut client = clients::client_chen::client_chen::ClientChen::new(
                     client.id,
                     HashMap::new(),
                     packet_receiver,
