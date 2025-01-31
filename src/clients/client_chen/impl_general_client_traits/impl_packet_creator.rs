@@ -3,25 +3,23 @@ use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
 impl PacketCreator for ClientChen{
     fn divide_string_into_slices(&mut self, string: String, max_slice_length: usize) -> Vec<String> {
-        let mut slices = Vec::new();
-        let mut start = 0;
+    let mut slices = Vec::new();
+    let mut start = 0;
 
-        while start < string.len() {
-            let end = std::cmp::min(start + max_slice_length, string.len());
+    while start < string.len() {
+        // Compare the (start + max_slice_length) with the end of the string to give us a provvisory end
+        let end = std::cmp::min(start + max_slice_length, string.len());
 
-            // Ensure we slice at a valid character boundary
-            let valid_end = string
-                .char_indices()
-                .take_while(|&(idx, _)| idx <= end)
-                .last()
-                .map(|(idx, _)| idx)
-                .unwrap_or(string.len());
+        // Validate the end
+        let valid_end = string[..end].char_indices().last().map(|(idx, _)| idx + 1).unwrap_or(end);
 
-            slices.push(string[start..valid_end].to_string());
-            start = valid_end;
-        }
-        slices
+        slices.push(string[start..valid_end].to_string());
+        start = valid_end;
     }
+
+    slices
+}
+
     fn msg_to_fragments<T: Serialize>(&mut self, msg: T, destination_id: NodeId) -> Option<Vec<Packet>> {
         let serialized_msg = serde_json::to_string(&msg).unwrap();
         let mut fragments = Vec::new(); //fragments are of type Packet
