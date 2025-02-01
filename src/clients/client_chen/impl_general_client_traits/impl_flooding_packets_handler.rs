@@ -4,6 +4,8 @@ use crate::clients::client_chen::general_client_traits::*;
 
 impl FloodingPacketsHandler for ClientChen {
     fn handle_flood_request(&mut self, packet: Packet, request: &mut FloodRequest) {
+        self.update_connected_nodes();
+
         info!("{:?} Client {} has received flood request that contains the path: {:?}", self.metadata.client_type ,self.metadata.node_id , request.path_trace);
         // Store in the input packet disk (not a fragment).
         self.storage.input_packet_disk
