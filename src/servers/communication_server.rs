@@ -4,6 +4,7 @@ use std::{
     fmt::Debug
     ,
 };
+use log::info;
 use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
 use wg_2024::{
     network::NodeId,
@@ -51,6 +52,7 @@ impl CommunicationServer{
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
+        info!("Starting Communication server with ID: {}", id);
         CommunicationServer {
             id,
 

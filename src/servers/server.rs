@@ -2,7 +2,7 @@
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet, VecDeque};
-use log::{error, info};
+use log::{debug, error, info};
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
@@ -35,22 +35,28 @@ pub trait Server{
     fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>;
 
     fn run(&mut self) {
+        info!("Running {} server with ID: {}", self.get_server_type(), self.get_id());
         loop {
             select_biased! {
                 recv(self.get_from_controller_command()) -> command_res => {
                     if let Ok(command) = command_res {
+                        info!("Server {}: Received command: {:?}", self.get_id(), command);
                         match command {
                             ServerCommand::AddSender(id, sender) => {
                                 self.get_packet_send().insert(id, sender);
+                                info!("Server {}: Added sender for node {}", self.get_id(), id);
+
                             }
                             ServerCommand::Discover => {
                                 self.discover();
                             }
                             ServerCommand::RemoveSender(id) => {
-                                self.update_topology_and_routes(id);
                                 self.get_packet_send().remove(&id);
+                                self.update_topology_and_routes(id);
+                                info!("Server {}: Removed sender for node {}", self.get_id(), id);
                             }
                             ServerCommand::ShortcutPacket(packet) => {
+                                info!("Server {}: Shortcut packet received from SC: {:?}", self.get_id(), packet);
                                 self.handle_packet(packet);
                             }
                             _ => {}
@@ -59,6 +65,7 @@ pub trait Server{
                 },
                 recv(self.get_packet_recv()) -> packet_res => {
                     if let Ok(packet) = packet_res {
+                        info!("Server {}: Received packet: {:?}", self.get_id(), packet);
                         self.handle_packet(packet)
                     }
                 },
@@ -78,8 +85,8 @@ pub trait Server{
 
     //FLOOD
     fn discover(&mut self) {
+        info!("Server {}: Starting discovery process", self.get_id());
 
-        self.get_clients().clear();
         self.get_routes().clear();
         self.get_topology().clear();
 
@@ -109,6 +116,7 @@ pub trait Server{
     }
 
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
+        debug!("Server {}: Handling flood request: {:?}", self.get_id(), flood_request);
 
         //Inserting self in flood request
         flood_request.increment(self.get_id(), NodeType::Server);
@@ -117,12 +125,11 @@ pub trait Server{
         let mut response = flood_request.generate_response(session_id);
         response.routing_header.increase_hop_index();
         self.send_packet(response.clone());
-
-        info!("Handling flood request {:?}", response);
     }
 
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
-        info!("Handling flood response: {:?}", flood_response);
+        info!("Server {}: Handling flood response: {:?}", self.get_id(), flood_response);
+
         let path = &flood_response.path_trace;
 
         self.update_routes_to_clients(path);
@@ -130,7 +137,6 @@ pub trait Server{
     }
 
     fn update_routes_to_clients(&mut self, path: &[(NodeId, NodeType)]) {
-        info!("Updating routes to clients with path: {:?}", path);
         if let Some((id, NodeType::Client)) = path.last() {
             if self
                 .get_routes()
@@ -142,13 +148,13 @@ pub trait Server{
                     *id,
                     path.iter().map(|entry| entry.0.clone()).collect(),
                 );
-                info!("Updated route to client {}: {:?}", id, path);
+                info!("Server {}: Updated route to client {}: {:?}", self.get_id(), id, path);
             }
         }
     }
 
     fn update_topology(&mut self, path: &[(NodeId, NodeType)]) {
-        info!("Updating topology with path: {:?}", path);
+        info!("Server {}: Updating topology with path: {:?}", self.get_id(), path);
         for i in 0..path.len() - 1 {
             let current = path[i].0;
             let next = path[i + 1].0;
@@ -168,6 +174,8 @@ pub trait Server{
 
     //NACK
     fn handle_nack(&mut self, nack: Nack, session_id: u64){
+        debug!("Server {}: Handling NACK for session {}: {:?}", self.get_id(), session_id, nack);
+
         match nack.nack_type {
             NackType::UnexpectedRecipient(_) => {
                 self.send_again_fragment(session_id, nack.fragment_index);
