@@ -1,16 +1,20 @@
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Debug
-    ,
+    fmt::Debug,
 };
 use log::info;
-use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
+use crate::general_use::{DataScope, DisplayDataCommunicationServer, Message, Query, Response, ServerCommand, ServerEvent, ServerType};
+//UI
+// use crate::ui_traits::Monitoring;    // todo: commented for test repo
 use wg_2024::{
     network::NodeId,
-    packet::Packet,
+    packet::{
+        Packet,
+        PacketType,
+    },
 };
-
+use crate::general_use::DataScope::{UpdateAll, UpdateSelf};
 use super::server::CommunicationServer as CharTrait;
 use super::server::Server as MainTrait;
 
@@ -75,6 +79,73 @@ impl CommunicationServer{
     }
 }
 
+
+// todo: commented for test repo
+// impl Monitoring for CommunicationServer {
+//     fn send_display_data(&mut self, sender_to_gui: Sender<String>, data_scope: DataScope) {
+//         let neighbors =  self.packet_send.keys().cloned().collect();
+//         let display_data = DisplayDataCommunicationServer{
+//             node_id: self.id,
+//             node_type: "Communication Server".to_string(),
+//             flood_id: self.flood_ids.last().cloned().unwrap_or(0),
+//             connected_node_ids: neighbors,
+//             routing_table: self.routes.clone(),
+//             registered_clients: self.list_users.clone(),
+//         };
+//
+//         self.to_controller_event.send(ServerEvent::CommunicationServerData(self.id, display_data, data_scope)).expect("Failed to send communication server data");
+//     }
+//     fn run_with_monitoring(
+//         &mut self,
+//         sender_to_gui: Sender<String>,
+//     ) {
+//         self.send_display_data(sender_to_gui.clone(), DataScope::UpdateAll);
+//         loop {
+//             select_biased! {
+//                 recv(self.get_from_controller_command()) -> command_res => {
+//                     if let Ok(command) = command_res {
+//                         match command {
+//                             ServerCommand::UpdateMonitoringData => {
+//                                 self.send_display_data(sender_to_gui.clone(), DataScope::UpdateAll);
+//                             }
+//                             ServerCommand::AddSender(id, sender) => {
+//                                 self.get_packet_send().insert(id, sender);
+//                                 self.send_display_data(sender_to_gui.clone(), UpdateSelf);
+//                             }
+//                             ServerCommand::RemoveSender(id) => {
+//                                 self.get_packet_send().remove(&id);
+//                                 self.update_topology_and_routes(id);
+//                                 self.send_display_data(sender_to_gui.clone(),DataScope::UpdateSelf);
+//                             }
+//                             ServerCommand::ShortcutPacket(packet) => {
+//                                  match packet.pack_type {
+//                                     PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+//                                     PacketType::Ack(ack) => self.handle_ack(ack),
+//                                     PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+//                                     PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+//                                     PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+//                                 }
+//                                 self.send_display_data(sender_to_gui.clone(),DataScope::UpdateSelf);
+//                             }
+//                         }
+//                     }
+//                 },
+//                 recv(self.get_packet_recv()) -> packet_res => {
+//                     if let Ok(packet) = packet_res {
+//                         match packet.pack_type {
+//                             PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+//                             PacketType::Ack(ack) => self.handle_ack(ack),
+//                             PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+//                             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+//                             PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+//                         }
+//                         self.send_display_data(sender_to_gui.clone(), DataScope::UpdateSelf);
+//                     }
+//                 },
+//             }
+//         }
+//     }
+// }
 impl MainTrait for CommunicationServer{
     fn get_id(&self) -> NodeId{ self.id }
     fn get_server_type(&self) -> ServerType{ ServerType::Communication }
@@ -110,7 +181,7 @@ impl MainTrait for CommunicationServer{
 
                 Ok(Query::RegisterClient(node_id)) => self.add_client(node_id),
                 Ok(Query::AskListClients) => self.give_list_back(src_id),
-                Ok(Query::SendMessageTo(node_id, message)) => self.forward_message_to(node_id, message),
+                Ok(Query::SendMessage(message)) => self.forward_message_to(message),
                 Err(_) => {
                     panic!("Damn, not the right struct")
                 }
@@ -181,10 +252,10 @@ impl CharTrait for CommunicationServer {
 
     }
 
-    fn forward_message_to(&mut self, destination_id: NodeId, message: Message) {
+    fn forward_message_to(&mut self, message: Message) {
 
         //Creating data to send
-        let response = Response::MessageFrom(destination_id, message);
+        let response = Response::MessageReceived(message.clone());
 
         //Serializing message to send
         let response_as_string = serde_json::to_string(&response).unwrap();
@@ -198,7 +269,7 @@ impl CharTrait for CommunicationServer {
         }
 
         //Generating header
-        let route: Vec<NodeId> = self.find_path_to(destination_id);
+        let route: Vec<NodeId> = self.find_path_to(message.get_recipient());
         let header = Self::create_source_routing(route);
 
         // Generating fragment

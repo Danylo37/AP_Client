@@ -6,7 +6,9 @@ use wg_2024::{
     packet::{NodeType, Packet, FloodRequest}
 };
 
-use crate::general_use::{ClientCommand, ClientEvent, ClientId, Message, Query, ServerId, ServerType};
+use crate::general_use::{
+    ClientCommand, ClientEvent, ClientId, Message, Query, ServerId, ServerType, Speaker::Me
+};
 use super::{CommandHandler, ChatClientDanylo, PacketHandler, Senders, GeneratorId, MessageFragments};
 
 impl CommandHandler for ChatClientDanylo {
@@ -142,7 +144,7 @@ impl CommandHandler for ChatClientDanylo {
     /// ###### Sends a message to a specified client.
     /// Sends a message to the server that the client is connected to,
     /// which then forwards the message to the specified client.
-    fn send_message_to(&mut self, to: ClientId, message: Message) {
+    fn send_message_to(&mut self, to: ClientId, content: String) {
         let option_server_id = self.clients.iter()
             .find(|(_, clients)| clients.contains(&to))
             .map(|(server_id, _)| *server_id);
@@ -157,13 +159,15 @@ impl CommandHandler for ChatClientDanylo {
 
         debug!("Client {}: Sending message to client {} via server {}", self.id, to, server_id);
 
-        let result = self.create_and_send_message(Query::SendMessageTo(to, message.clone()), server_id);
+        let message = Message::new(self.id, to, content.clone());
+
+        let result = self.create_and_send_message(Query::SendMessage(message), server_id);
 
         match result {
             Ok(_) => {
                 info!("Client {}: Message sent successfully.", self.id);
                 let chat = self.chats.entry(to).or_insert_with(Vec::new);
-                chat.push((self.id, message));
+                chat.push((Me, content));
             }
             Err(err) => {
                 let error_string = format!("Client {}: Failed to send message: {}", self.id, err);

@@ -1,19 +1,22 @@
-use std::io::{self, Write};
-use crossbeam_channel::Receiver;
-use wg_2024::network::NodeId;
 use crate::general_use::{ClientCommand, Response};
 use crate::simulation_controller::SimulationController;
+use crossbeam_channel::Receiver;
+use std::collections::HashMap;
+use std::io::{self, Write};
+use wg_2024::network::NodeId;
 
 pub struct UI<'a> {
     controller: &'a mut SimulationController,
-    response_recv: Receiver<Response>
+    response_recv: Receiver<Response>,
+    clients: HashMap<NodeId, Vec<NodeId>>,
 }
 
 impl<'a> UI<'a> {
     pub fn new(controller: &'a mut SimulationController, response_recv: Receiver<Response>) -> Self {
         Self {
             controller,
-            response_recv
+            response_recv,
+            clients: HashMap::new(),
         }
     }
 
@@ -67,7 +70,7 @@ impl<'a> UI<'a> {
         let clients_ids = self.controller.get_list_clients();
         for (i, client) in clients_ids.iter().enumerate(){
             println!(
-                "{}. Client {}", i+1, client.1
+                "{}. {} client {}", i+1, client.0, client.1
             );
         }
 
@@ -201,8 +204,10 @@ impl<'a> UI<'a> {
         match self.response_recv.recv() {
             Ok(response) => {
                 match response {
-                    Response::ListClients(list) => {
+                    Response::ListClients(mut list) => {
                         println!("Clients list {:?}", list);
+                        list.retain(|&id| id != client_id);
+                        self.clients.insert(client_id, list);
                     }
                     _ => {
                         println!("Unexpected response");
@@ -216,26 +221,58 @@ impl<'a> UI<'a> {
     }
 
     fn send_message_to(&mut self, client_id: NodeId) {
-        println!("Sending message to another client");
-        println!("Which client do you want to send the message to?");
-        let clients_ids = self.controller.get_list_clients();
-        for (i, client) in clients_ids.iter().enumerate(){
-            println!(
-                "{}. Client {}", i+1, client.1
-            );
+        let mut stay_inside = true;
+        while stay_inside {
+            let Some(clients_ids) = self.clients.get(&client_id) else {
+                println!("No clients available to send message to");
+                return;
+            };
+
+            if clients_ids.is_empty() {
+                println!("No clients available to send message to");
+                return;
+            }
+
+            println!("Which client do you want to send the message to?");
+            for (i, client) in clients_ids.iter().enumerate(){
+                println!("{}. Client {}", i+1, client);
+            }
+            println!("0. Go back");
+
+            let user_choice = Self::ask_input_user();
+            let client_id_chose = clients_ids[user_choice - 1];
+
+            let message = "Message".to_string();
+
+            match user_choice {
+                x if (0..=clients_ids.len()).contains(&(x-1)) => {
+                    self.controller
+                        .command_senders_clients
+                        .get(&client_id)
+                        .unwrap()
+                        .0
+                        .send(ClientCommand::SendMessageTo(client_id_chose, message))
+                        .unwrap();
+                    stay_inside = false;
+                    println!("Message sent to client {}", client_id_chose);
+
+                    match self.response_recv.recv() {
+                        Ok(response) => {
+                            match response {
+                                Response::MessageReceived(message) => {
+                                    println!("Client {} received message from client {}: {}", client_id_chose, message.get_sender(), message.get_content());
+                                }
+                                _ => {
+                                    println!("Unexpected response");
+                                }
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                }
+                0 => stay_inside = false,
+                _ => println!("Not a valid option, choose again")
+            }
         }
-
-        let user_choice = Self::ask_input_user();
-        let client_id_chose = clients_ids[user_choice - 1].1;
-
-        let message = "Message".to_string();
-
-        self.controller
-            .command_senders_clients
-            .get(&client_id)
-            .unwrap()
-            .0
-            .send(ClientCommand::SendMessageTo(client_id_chose, message))
-            .unwrap();
     }
 }

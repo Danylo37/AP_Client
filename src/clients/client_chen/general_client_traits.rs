@@ -1,4 +1,3 @@
-use log::warn;
 use crate::clients::client_chen::prelude::*;
 
 pub trait Sending{
@@ -92,19 +91,12 @@ pub trait FragmentsHandler:PacketsReceiver{ //message fragments
 
 pub trait CommandHandler{
     fn handle_controller_command(&mut self, command: ClientCommand);
+    // fn handle_controller_command_with_monitoring(&mut self, command: ClientCommand, sender_to_gui: Sender<String>);      // todo: commented for test repo
 }
 
 pub trait ServerQuery{
     fn ask_server_type(&mut self, server_id: ServerId);
-    fn send_message_to_client(&mut self, server_id: ServerId, client_id: ClientId, message: Message);
     fn ask_list_files(&mut self, server_id: ServerId);  //all the files that a server has, so not a specific file_ref (or file_index)
     fn ask_file(&mut self, server_id: ServerId, file_ref: String);
     fn ask_media(&mut self, server_id: ServerId, media_ref: String);  //string is the reference found in the files
-
 }
-
-
-
-
-
-

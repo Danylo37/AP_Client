@@ -100,13 +100,6 @@ impl FragmentsHandler for ClientChen {
                 self.update_topology_entry_for_server(initiator_id, server_type);
                 println!("The type of the server is {:?}", server_type);
             },
-            Response::MessageFrom(client_id, message) => {
-                self.storage
-                    .message_chat
-                    .entry(client_id)
-                    .or_insert_with(Vec::new)
-                    .push((Speaker::HimOrHer, message));
-            },
             Response::ListFiles(list_file)  => {
                 // Placeholder for file/media handling
                 self.handle_list_file(list_file);
@@ -120,7 +113,7 @@ impl FragmentsHandler for ClientChen {
             Response::Err(error) => {
                 warn!("Error received: {:?}", error);
             },
-            _=> {}
+            _ => {}
         }
     }
 

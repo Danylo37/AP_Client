@@ -28,7 +28,7 @@ pub(crate) struct ClientChen {
     pub(crate) storage: NodeStorage,
     // Information about the current network topology
     pub(crate) network_info: NetworkInfo,
-    pub ui_response_send: Sender<Response>,
+    pub ui_response_send: Sender<Response>,     // todo: commented for test repo
 }
 
 impl TraitClient for ClientChen {
@@ -38,13 +38,13 @@ impl TraitClient for ClientChen {
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
         controller_recv: Receiver<ClientCommand>,
-        ui_response_send: Sender<Response>,
+        ui_response_send: Sender<Response>,     // todo: commented for test repo
     ) -> Self {
 
         let connected_nodes = packet_send.keys().cloned().collect();
 
         Self {
-            ui_response_send,
+            ui_response_send,                   // todo: commented for test repo
 
             // Client's metadata
             metadata: NodeMetadata {

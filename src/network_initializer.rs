@@ -153,13 +153,12 @@ impl NetworkInit {
         to_contr_event: Sender<ClientEvent>,
         ui_response_sender: Sender<Response>,
     ) {
+        let mut counter = 0;
         for client in config_client {
 
             let (to_client_command_sender, client_get_command_recv):(Sender<ClientCommand>,Receiver<ClientCommand>) = unbounded();
-            controller.register_client(client.id,to_client_command_sender, ClientType::Chat);
             let (packet_sender, packet_receiver) = unbounded();
 
-            //
             self.clients_sender_channels.insert(client.id, packet_sender);
 
             //Copy of contrEvent
@@ -167,18 +166,37 @@ impl NetworkInit {
             //Copy of contrEvent
             let copy_ui_response_sender = ui_response_sender.clone();
 
-            thread::spawn(move || {
-                let mut client = clients::client_chen::client_chen::ClientChen::new(
-                    client.id,
-                    HashMap::new(),
-                    packet_receiver,
-                    copy_contr_event,
-                    client_get_command_recv,
-                    copy_ui_response_sender,
-                );
 
-                client.run();
-            });
+            if counter % 3 == 0 {
+                controller.register_client(client.id,to_client_command_sender, ClientType::Web);
+
+                thread::spawn(move || {
+                    let mut client = clients::client_chen::ClientChen::new(
+                        client.id,
+                        HashMap::new(),
+                        packet_receiver,
+                        copy_contr_event,
+                        client_get_command_recv,
+                        copy_ui_response_sender,
+                    );
+                    client.run();
+                });
+            } else {
+                controller.register_client(client.id,to_client_command_sender, ClientType::Chat);
+
+                thread::spawn(move || {
+                    let mut client = clients::client_danylo::ChatClientDanylo::new(
+                        client.id,
+                        HashMap::new(),
+                        packet_receiver,
+                        copy_contr_event,
+                        client_get_command_recv,
+                        copy_ui_response_sender,
+                    );
+                    client.run();
+                });
+            }
+            counter += 1;
         }
     }
 

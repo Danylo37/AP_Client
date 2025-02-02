@@ -32,7 +32,7 @@ pub(super) trait CommandHandler {
     fn send_known_servers(&mut self);
     fn discovery(&mut self);
     fn request_server_type(&mut self, server_id: ServerId);
-    fn send_message_to(&mut self, to: ClientId, message: Message);
+    fn send_message_to(&mut self, to: ClientId, message: String);
     fn request_to_register(&mut self, server_id: ServerId);
     fn request_clients_list(&mut self, server_id: ServerId);
     fn create_and_send_message(&mut self, query: Query, server_id: ServerId) -> Result<(), String>;
@@ -43,7 +43,7 @@ pub(super) trait ServerResponseHandler {
     fn handle_server_type(&mut self, server_id: ServerId, server_type: ServerType);
     fn handle_client_registered(&mut self, server_id: ServerId);
     fn handle_clients_list(&mut self, server_id: ServerId, clients: Vec<ClientId>);
-    fn handle_message_from(&mut self, from: ClientId, message: Message);
+    fn handle_message(&mut self, message: Message);
 }
 
 pub(super) trait Senders {

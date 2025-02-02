@@ -59,7 +59,7 @@ pub trait Server{
                                 info!("Server {}: Shortcut packet received from SC: {:?}", self.get_id(), packet);
                                 self.handle_packet(packet);
                             }
-                            _ => {}
+                            _ => {},
                         }
                     }
                 },
@@ -519,7 +519,7 @@ pub trait Server{
 pub trait CommunicationServer {
     fn add_client(&mut self, client_id: NodeId);
     fn give_list_back(&mut self, client_id: NodeId);
-    fn forward_message_to(&mut self, destination_id: NodeId, message: Message);
+    fn forward_message_to(&mut self, message: Message);
 }
 
 ///Content Server functions

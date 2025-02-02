@@ -8,7 +8,6 @@ use wg_2024::{
     packet::{Packet, NodeType},
 };
 
-pub type Message = String;
 pub type MediaRef = String;
 pub type FileRef = String;
 pub type ServerId = NodeId;
@@ -20,7 +19,7 @@ pub type SessionId = u64;
 pub type FloodId = u64;
 pub type FragmentIndex = u64;
 pub type UsingTimes = u64;  //to measure traffic of fragments in a path.
-pub type ChatHistory = Vec<(ClientId, Message)>;
+pub type ChatHistory = Vec<(Speaker, String)>;
 pub type Node = (NodeId, NodeType);
 
 ///all the monitoring data
@@ -37,6 +36,31 @@ pub struct DisplayDataWebBrowser {
     pub curr_received_file_list: Vec<String>,
     pub chosen_file_text: String,
     pub serialized_media: HashMap<MediaRef, String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Message {
+    from: NodeId,
+    to: NodeId,
+    content: String,
+}
+
+impl Message {
+    pub fn new(from: NodeId, to: NodeId, content: String) -> Self {
+        Self { from, to, content }
+    }
+
+    pub fn get_sender(&self) -> NodeId {
+        self.from
+    }
+
+    pub fn get_recipient(&self) -> NodeId {
+        self.to
+    }
+
+    pub fn get_content(&self) -> &str {
+        &self.content
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -102,7 +126,7 @@ pub enum NotSentType{
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Speaker{
+pub enum Speaker {
     Me,
     HimOrHer,
 }
@@ -150,7 +174,7 @@ pub enum ClientCommand {
 
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
-    SendMessageTo(ClientId, Message),  //if you order a client to send messages to another client you can do it
+    SendMessageTo(ClientId, String),  //if you order a client to send messages to another client you can do it
     StartFlooding,
     AskTypeTo(ServerId),
     RequestListFile(ServerId),   //request the list of the file that the server has.
@@ -188,7 +212,7 @@ pub enum Query {
     RegisterClient(NodeId),
     UnregisterClient(NodeId),
     AskListClients,
-    SendMessageTo(NodeId, Message),
+    SendMessage(Message),
 
     //To Content Server
     //(Text)
@@ -206,7 +230,7 @@ pub enum Response {
 
     //From Communication Server
     ClientRegistered,
-    MessageFrom(NodeId, Message),
+    MessageReceived(Message),
     ListClients(Vec<NodeId>),
 
     //From Content Server

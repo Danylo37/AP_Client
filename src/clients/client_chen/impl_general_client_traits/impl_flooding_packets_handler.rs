@@ -4,7 +4,7 @@ use crate::clients::client_chen::general_client_traits::*;
 
 impl FloodingPacketsHandler for ClientChen {
     fn handle_flood_request(&mut self, _packet: Packet, request: &mut FloodRequest) {
-        self.update_connected_nodes();
+        self.update_connected_nodes();      // todo: only for testing repo
 
         info!("{:?} Client {} has received flood request that contains the path: {:?}", self.metadata.client_type ,self.metadata.node_id , request.path_trace);
         // Prepare the flood response.

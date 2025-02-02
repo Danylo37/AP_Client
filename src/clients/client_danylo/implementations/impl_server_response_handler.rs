@@ -1,5 +1,5 @@
 use log::{debug, error, info};
-use crate::general_use::{ClientId, Message, Response, ServerId, ServerType};
+use crate::general_use::{ClientId, Message, Response, ServerId, ServerType, Speaker::HimOrHer};
 use super::{ServerResponseHandler, ChatClientDanylo};
 
 impl ServerResponseHandler for ChatClientDanylo {
@@ -19,8 +19,8 @@ impl ServerResponseHandler for ChatClientDanylo {
                 Response::ListClients(clients) => {
                     self.handle_clients_list(server_id, clients);
                 }
-                Response::MessageFrom(from, message) => {
-                    self.handle_message_from(from, message);
+                Response::MessageReceived(message) => {
+                    self.handle_message(message);
                 }
                 Response::Err(error) =>
                     error!("Client {}: Error received from server {}: {:?}", self.id, server_id, error),
@@ -73,10 +73,12 @@ impl ServerResponseHandler for ChatClientDanylo {
 
     /// ###### Handles the message received from another client.
     /// Adds the message to the chat history with the sender.
-    fn handle_message_from(&mut self, from: ClientId, message: Message) {
-        info!("Client {}: New message from {}: {:?}", self.id, from, &message);
+    fn handle_message(&mut self, message: Message) {
+        info!("Client {}: New message from {}: {:?}", self.id, message.get_sender(), message.get_content());
 
-        let chat = self.chats.entry(from).or_insert_with(Vec::new);
-        chat.push((from, message));
+        self.ui_response_send.send(Response::MessageReceived(message.clone())).unwrap();
+
+        let chat = self.chats.entry(message.get_sender()).or_insert_with(Vec::new);
+        chat.push((HimOrHer, message.get_content().to_string()));
     }
 }
