@@ -1,4 +1,5 @@
 use log::{debug, error, info};
+use crate::clients::client_danylo::chat_client_traits::CommandHandler;
 use crate::general_use::{ClientId, Message, Response, ServerId, ServerType, Speaker::HimOrHer};
 use super::{ServerResponseHandler, ChatClientDanylo};
 
@@ -32,15 +33,18 @@ impl ServerResponseHandler for ChatClientDanylo {
     /// ###### Handles the server type response.
     /// Updates the server type in the `servers` map and
     /// sets the registration status if the server is of type `Communication`.
+    /// Requests to register if the server is of type `Communication`.
     fn handle_server_type(&mut self, server_id: ServerId, server_type: ServerType) {
         info!("Client {}: Server type received successfully.", self.id);
 
         // Insert the server type into the servers map.
         self.servers.insert(server_id, server_type);
 
-        // If the server is of type Communication, set the registration status to false.
+        // If the server is of type Communication, set the registration status to false
+        // and send request to register.
         if !self.is_registered.contains_key(&server_id) && server_type == ServerType::Communication {
             self.is_registered.insert(server_id, false);
+            self.request_to_register(server_id);
         }
 
         self.ui_response_send.send(Response::ServerType(server_type)).unwrap();
