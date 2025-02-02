@@ -3,8 +3,9 @@ use super::server::Server as MainTrait;
 use crate::general_use::{DataScope, DisplayDataMediaServer, Query, Response, ServerCommand, ServerEvent, ServerType};
 // use crate::ui_traits::Monitoring;
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
+use log::warn;
 use wg_2024::{
     network::NodeId,
     packet::{
@@ -41,6 +42,9 @@ pub struct MediaServer{
 
     //Characteristic-Server fields
     pub media: HashMap<String, String>,
+
+    //Queries to process
+    pub queries_to_process: VecDeque<(NodeId, Query)>,
 }
 
 impl MediaServer {
@@ -69,7 +73,9 @@ impl MediaServer {
             packet_recv,
             packet_send,
 
-            media
+            media,
+
+            queries_to_process: VecDeque::new(),
         }
     }
 }
@@ -166,24 +172,25 @@ impl MainTrait for MediaServer{
     fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>{ &mut self.packet_send }
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>{ &self.packet_send }
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.reassembling_messages }
-    fn get_sending_messages(&mut self) ->  &mut HashMap<u64, (Vec<u8>, u8)>{ &mut self.sending_messages }
-    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>{ &self.sending_messages }
+    fn process_query(&mut self, query: Query, src_id: NodeId) {
+        // Check if the topology is empty, save query and start the discovery process if it is.
+        if self.topology.is_empty() {
+            self.save_query_to_process(src_id, query);
+            return;
+        }
 
+        match query {
+            Query::AskType => self.give_type_back(src_id),
 
-    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
-        match String::from_utf8(data.clone()) {
-            Ok(data_string) => match serde_json::from_str(&data_string) {
-                Ok(Query::AskType) => self.give_type_back(src_id),
-
-                Ok(Query::AskMedia(reference)) => self.give_media_back(src_id, reference),
-                Err(_) => {
-                    panic!("Damn, not the right struct")
-                }
-                _ => {}
-            },
-            Err(e) => println!("Argh, {:?}", e),
+            Query::AskMedia(reference) => self.give_media_back(src_id, reference),
+            _ => {}
         }
     }
+    fn get_sending_messages(&mut self) ->  &mut HashMap<u64, (Vec<u8>, u8)>{ &mut self.sending_messages }
+
+    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>{ &self.sending_messages }
+
+    fn get_queries_to_process(&mut self) -> &mut VecDeque<(NodeId, Query)>{ &mut self.queries_to_process }
 }
 
 impl CharTrait for MediaServer{

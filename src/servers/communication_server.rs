@@ -3,7 +3,8 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
 };
-use log::info;
+use std::collections::VecDeque;
+use log::{info, warn};
 use crate::general_use::{DataScope, DisplayDataCommunicationServer, Message, Query, Response, ServerCommand, ServerEvent, ServerType};
 //UI
 // use crate::ui_traits::Monitoring;    // todo: commented for test repo
@@ -46,6 +47,9 @@ pub struct CommunicationServer{
 
     //Characteristic-Server fields
     pub list_users: Vec<NodeId>,
+
+    //Queries to process
+    pub queries_to_process: VecDeque<(NodeId, Query)>,
 }
 
 impl CommunicationServer{
@@ -75,6 +79,8 @@ impl CommunicationServer{
             packet_send,
 
             list_users: Vec::new(),
+
+            queries_to_process: VecDeque::new(),
         }
     }
 }
@@ -170,27 +176,27 @@ impl MainTrait for CommunicationServer{
     fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>{ &mut self.packet_send }
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>{ &self.packet_send }
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.reassembling_messages }
-    fn get_sending_messages(&mut self) ->  &mut HashMap<u64, (Vec<u8>, u8)>{ &mut self.sending_messages }
-    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>{ &self.sending_messages }
+    fn process_query(&mut self, query: Query, src_id: NodeId) {
+        // Check if the topology is empty and start the discovery process if it is.
+        if self.topology.is_empty() {
+            self.save_query_to_process(src_id, query);
+            return;
+        }
 
+        match query {
+            Query::AskType => self.give_type_back(src_id),
 
-    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
-        match String::from_utf8(data.clone()) {
-            Ok(data_string) => match serde_json::from_str(&data_string) {
-                Ok(Query::AskType) => self.give_type_back(src_id),
-
-                Ok(Query::RegisterClient(node_id)) => self.add_client(node_id),
-                Ok(Query::AskListClients) => self.give_list_back(src_id),
-                Ok(Query::SendMessage(message)) => self.forward_message_to(message),
-                Err(_) => {
-                    panic!("Damn, not the right struct")
-                }
-                _ => {}
-            },
-            Err(e) => println!("Argh, {:?}", e),
+            Query::RegisterClient(node_id) => self.add_client(node_id),
+            Query::AskListClients => self.give_list_back(src_id),
+            Query::SendMessage(message) => self.forward_message_to(message),
+            _ => {}
         }
     }
+    fn get_sending_messages(&mut self) ->  &mut HashMap<u64, (Vec<u8>, u8)>{ &mut self.sending_messages }
 
+    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>{ &self.sending_messages }
+
+    fn get_queries_to_process(&mut self) -> &mut VecDeque<(NodeId, Query)>{ &mut self.queries_to_process }
 }
 
 impl CharTrait for CommunicationServer {
