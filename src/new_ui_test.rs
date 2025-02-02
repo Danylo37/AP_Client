@@ -158,11 +158,14 @@ impl<'a> UI<'a> {
     fn start_flooding(&mut self, client_id_chose: NodeId) {
         self.controller.start_flooding_on_client(client_id_chose).expect("TODO: panic message");
         loop {
-            match self.response_recv.recv_timeout(Duration::from_millis(100)) {
+            match self.response_recv.recv_timeout(Duration::from_millis(200)) {
                 Ok(response) => {
                     match response {
                         Response::ServerType(server_type) => {
                             println!("Received server type: {:?}", server_type);
+                        }
+                        Response::ClientRegistered => {
+                            println!("Client registered to server successfully");
                         }
                         response => {
                             println!("Unexpected response: {:?}", response);
@@ -418,7 +421,9 @@ impl<'a> UI<'a> {
             return;
         };
 
-        let file = "file.txt".to_string();  // todo
+        let Some(file) = self.choose_file() else {
+            return;
+        };
 
         println!("Requesting file from server {}", server_id);
         self.controller
@@ -472,7 +477,7 @@ impl<'a> UI<'a> {
         }
 
         for (i, file) in self.files .iter().enumerate() {
-            print!("{}. {}", i+1, file);
+            println!("{}. {}", i+1, file);
         }
         println!("0. Go back");
     }
