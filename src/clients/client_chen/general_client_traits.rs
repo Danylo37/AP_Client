@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use crate::clients::client_chen::prelude::*;
 
 pub trait Sending{
@@ -85,8 +86,8 @@ pub trait FragmentsHandler:PacketsReceiver{ //message fragments
     fn handle_fragments_in_buffer_with_checking_status(&mut self);  //when you run
     fn process_message(&mut self, initiator_id: NodeId, message: Response);
     ///principal methods
-    fn reassemble_fragments_in_buffer(&mut self, session_id: SessionId) -> Result<Response, String>;
-
+    fn reassemble_fragments<T: Serialize + DeserializeOwned>(&mut self, fragments: Vec<Packet>) -> Result<T, String>;
+    fn reassemble_fragments_in_buffer<T: Serialize + DeserializeOwned>(&mut self, session_id: SessionId) -> Result<T, String>;
 }
 
 pub trait CommandHandler{

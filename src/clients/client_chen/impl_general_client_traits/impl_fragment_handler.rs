@@ -75,6 +75,7 @@ impl FragmentsHandler for ClientChen {
                             if let Ok(message) = self.reassemble_fragments_in_buffer(session_id) {
                                 if let Some(id) = initiator_id {
                                     self.process_message(id, message);
+                                    self.storage.fragment_assembling_buffer.remove(&session_id);
                                 } else {
                                     warn!("Initiator ID not found for session: {:?}", session_id);
                                 }
@@ -117,7 +118,30 @@ impl FragmentsHandler for ClientChen {
         }
     }
 
-    fn reassemble_fragments_in_buffer(&mut self, session_id: SessionId) -> Result<Response, String> {
+    fn reassemble_fragments<T: Serialize + DeserializeOwned>(&mut self, fragments: Vec<Packet>) -> Result<T, String> {
+        let mut raw_data = Vec::new();
+
+        for packet in fragments {
+            match &packet.pack_type {
+                PacketType::MsgFragment(fragment) => {
+                    // Push only the valid portion of `data`
+                    raw_data.extend_from_slice(&fragment.data[..fragment.length as usize]);
+                }
+                _ => return Err("Non-fragment packet type".to_string()),
+            }
+        }
+
+        // Convert bytes to String once at the end
+        let serialized_msg = String::from_utf8(raw_data)
+            .map_err(|e| format!("Invalid UTF-8 sequence: {}", e))?;
+
+        eprintln!("Reassembled JSON: {:?}", serialized_msg); // Debugging
+
+        // Deserialize the complete message
+        serde_json::from_str(&serialized_msg)
+            .map_err(|e| format!("Deserialization failed: {}", e))
+    }
+    fn reassemble_fragments_in_buffer<T: Serialize + DeserializeOwned>(&mut self, session_id: SessionId) -> Result<T, String> {
         // Get fragments once to avoid multiple lookups
         let fragments = self.storage
             .fragment_assembling_buffer
@@ -137,7 +161,7 @@ impl FragmentsHandler for ClientChen {
 
             match &packet.pack_type {
                 PacketType::MsgFragment(fragment) => {
-                    raw_data.extend_from_slice(&fragment.data);
+                    raw_data.extend_from_slice(&fragment.data[..fragment.length as usize]);
                 }
                 _ => return Err(format!("Non-fragment packet type in session {} at index {}", session_id, key)),
             }

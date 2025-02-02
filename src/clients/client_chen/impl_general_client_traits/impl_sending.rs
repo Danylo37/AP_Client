@@ -60,6 +60,15 @@ impl Sending for ClientChen {
 
     fn send_query_by_routing_header(&mut self, source_routing_header: SourceRoutingHeader, query: Query) {
         if let Some(query_packets) = self.msg_to_fragments_by_routing_header(query, source_routing_header) {
+            let test_query = self.reassemble_fragments::<Query>(query_packets.clone());
+            match test_query {
+                Ok(test_query) => {
+                    println!("the query: {:?}", test_query);
+                }
+                Err(e) => {
+                    error!("Failed to assemble query: {}", e);
+                }
+            }
             for query_packet in query_packets {
                 self.send(query_packet);
             }
