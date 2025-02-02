@@ -103,9 +103,9 @@ impl NetworkInit {
         //Connecting the Nodes
         self.connect_nodes(&mut controller, neighbours);
 
-        for (_, (sender, _)) in controller.command_senders_servers.iter(){
-            sender.send(ServerCommand::Discover).unwrap();
-        }
+        // for (_, (sender, _)) in controller.command_senders_servers.iter(){
+        //     sender.send(ServerCommand::Discover).unwrap();
+        // }
 
         println!("Starting UI");
         UI::new(&mut controller, ui_response_recv).run();

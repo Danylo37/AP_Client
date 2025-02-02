@@ -240,7 +240,9 @@ impl CommandHandler for ChatClientDanylo {
 
         // Check if the topology is empty and start the discovery process if it is.
         if self.topology.is_empty() {
-            self.discovery();
+            if self.queries_to_resend.is_empty() {
+                self.discovery();
+            }
             self.queries_to_resend.push_back((server_id, query));
             return Err("Topology is empty. Discovery started and the query will be resent".to_string());
         }

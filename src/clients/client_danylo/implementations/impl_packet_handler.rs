@@ -7,7 +7,7 @@ use wg_2024::{
 };
 
 use crate::general_use::{FragmentIndex, ServerId, ServerType, SessionId, Node};
-use super::{PacketHandler, ChatClientDanylo, Senders, ServerResponseHandler, Reassembler};
+use super::{PacketHandler, ChatClientDanylo, Senders, ServerResponseHandler, Reassembler, CommandHandler};
 
 impl PacketHandler for ChatClientDanylo {
     /// ###### Handles incoming packets and delegates them to the appropriate handler based on the packet type.
@@ -264,6 +264,11 @@ impl PacketHandler for ChatClientDanylo {
                     self.servers.insert(*id, ServerType::Undefined);
                 }
 
+                // Request the server type if it is undefined.
+                if self.servers.get(id).unwrap() == &ServerType::Undefined {
+                    self.request_server_type(*id);
+                }
+
                 // Update the routing table with the new, shorter path.
                 self.routes.insert(
                     *id,
@@ -272,7 +277,7 @@ impl PacketHandler for ChatClientDanylo {
                 info!("Client {}: Updated route to server {}: {:?}", self.id, id, path);
 
                 // Resend queries that were waiting for the route to the server.
-                if !self.queries_to_resend.is_empty() {
+                if !self.queries_to_resend.is_empty() && self.queries_to_resend.front().unwrap().0 == *id {
                     self.resend_queries();
                 }
             }

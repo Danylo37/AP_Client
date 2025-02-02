@@ -3,6 +3,7 @@ use crate::simulation_controller::SimulationController;
 use crossbeam_channel::Receiver;
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::time::Duration;
 use wg_2024::network::NodeId;
 
 pub struct UI<'a> {
@@ -156,6 +157,23 @@ impl<'a> UI<'a> {
 
     fn start_flooding(&mut self, client_id_chose: NodeId) {
         self.controller.start_flooding_on_client(client_id_chose).expect("TODO: panic message");
+        loop {
+            match self.response_recv.recv_timeout(Duration::from_millis(100)) {
+                Ok(response) => {
+                    match response {
+                        Response::ServerType(server_type) => {
+                            println!("Received server type: {:?}", server_type);
+                        }
+                        response => {
+                            println!("Unexpected response: {:?}", response);
+                        }
+                    }
+                }
+                Err(_) => {
+                    break;
+                }
+            };
+        }
     }
 
     fn ask_type(&mut self, client_id: NodeId) {
@@ -172,8 +190,8 @@ impl<'a> UI<'a> {
                     Response::ServerType(server_type) => {
                         println!("Server type: {:?}", server_type);
                     }
-                    _ => {
-                        println!("Unexpected response");
+                    response => {
+                        println!("Unexpected response: {:?}", response);
                     }
                 }
             }
@@ -207,8 +225,8 @@ impl<'a> UI<'a> {
                     Response::Err(err) => {
                         println!("Error registering to server: {}", err);
                     }
-                    _ => {
-                        println!("Unexpected response");
+                    response => {
+                        println!("Unexpected response: {:?}", response);
                     }
                 }
             }
@@ -240,8 +258,8 @@ impl<'a> UI<'a> {
                         list.retain(|&id| id != client_id);
                         self.clients.insert(client_id, list);
                     }
-                    _ => {
-                        println!("Unexpected response");
+                    response => {
+                        println!("Unexpected response: {:?}", response);
                     }
                 }
             }
@@ -350,8 +368,8 @@ impl<'a> UI<'a> {
                                 Response::MessageReceived(message) => {
                                     println!("Client {} received message from client {}: {}", client_id_chose, message.get_sender(), message.get_content());
                                 }
-                                _ => {
-                                    println!("Unexpected response");
+                                response => {
+                                    println!("Unexpected response: {:?}", response);
                                 }
                             }
                         }
@@ -384,8 +402,8 @@ impl<'a> UI<'a> {
                         println!("Files list {:?}", list);
                         self.files = list;
                     }
-                    _ => {
-                        println!("Unexpected response");
+                    response => {
+                        println!("Unexpected response: {:?}", response);
                     }
                 }
             }
@@ -417,8 +435,8 @@ impl<'a> UI<'a> {
                     Response::File(file) => {
                         println!("File {:?}", file);
                     }
-                    _ => {
-                        println!("Unexpected response");
+                    response => {
+                        println!("Unexpected response: {:?}", response);
                     }
                 }
             }
@@ -481,8 +499,8 @@ impl<'a> UI<'a> {
                     Response::Media(media) => {
                         println!("Media {:?}", media);
                     }
-                    _ => {
-                        println!("Unexpected response");
+                    response => {
+                        println!("Unexpected response: {:?}", response);
                     }
                 }
             }
