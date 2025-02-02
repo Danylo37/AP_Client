@@ -12,7 +12,7 @@ use wg_2024::{
 
 use wg_2024::drone::Drone as TraitDrone;
 use krusty_drone::KrustyCrapDrone;
-
+use rand::random;
 use crate::servers;
 use crate::servers::server::Server as ServerTrait;
 
@@ -21,6 +21,10 @@ use crate::clients::Client as ClientTrait;
 use crate::general_use::{ClientCommand, ClientEvent, ClientType, Response, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
 use crate ::new_ui_test::UI;
+use crate::servers::communication_server::CommunicationServer;
+use crate::servers::content;
+use crate::servers::media_server::MediaServer;
+use crate::servers::text_server::TextServer;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
@@ -203,32 +207,82 @@ impl NetworkInit {
     /// SERVERS GENERATION
 
     fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, to_contr_event: Sender<ServerEvent> ) {
-        for server in config_server {
-            let (to_server_command_sender, server_get_command_recv):(Sender<ServerCommand>,Receiver<ServerCommand>) = unbounded();
-            controller.register_server(server.id, to_server_command_sender, ServerType::Communication);
+        let mut text_server_used = false;
+        let mut vec_files = Vec::new();
 
-            //Creating receiver for Server
+        for server in config_server {
+            let (command_sender, command_receiver) = unbounded();
+
             let (packet_sender, packet_receiver) = unbounded();
 
-            //Storing it for future usages
-            self.servers_sender_channels.insert(server.id, packet_sender);
+            let server_events_sender_clone = controller.server_event_sender.clone();
+            let server_type;
 
-            //Copy of contrEvent
-            let copy_contr_event = to_contr_event.clone();
+            let mut server_instance_comm: Option<CommunicationServer> = None;
+            let mut server_instance_text: Option<TextServer>= None;
+            let mut server_instance_media: Option<MediaServer>= None;
 
-            thread::spawn(move || {
+            if server.id == 8 {
+                server_type = ServerType::Communication;
 
-                let mut server = servers::communication_server::CommunicationServer::new(
+                server_instance_comm = Some(CommunicationServer::new(
                     server.id,
-                    copy_contr_event,
-                    server_get_command_recv,
+                    server_events_sender_clone,
+                    command_receiver,
                     packet_receiver,
                     HashMap::new(),
-                );
+                ));
 
-                server.run();
-            });
+            } else if server.id == 14 {
+                let content = content::get_media(vec_files.clone());
+                server_type = ServerType::Media;
 
+                server_instance_media = Some(MediaServer::new(
+                    server.id,
+                    content,
+                    server_events_sender_clone,
+                    command_receiver,
+                    packet_receiver,
+                    HashMap::new(),
+                ));
+            } else{
+                vec_files = content::choose_random_texts();
+                server_type = ServerType::Text;
+
+                server_instance_text = Some(TextServer::new(
+                    server.id,
+                    vec_files.iter().cloned().collect::<HashMap<String, String>>(),
+                    server_events_sender_clone,
+                    command_receiver,
+                    packet_receiver,
+                    HashMap::new(),
+                ));
+            };
+
+            controller.register_server(server.id, command_sender, server_type);
+            self.servers_sender_channels.insert(server.id, packet_sender);
+
+            // Create and run server
+            thread::spawn(move ||
+                match server_type {
+                    ServerType::Communication => {
+                        if let Some(mut server_instance) = server_instance_comm {
+                            server_instance.run();
+                        }
+                    },
+                    ServerType::Media => {
+                        if let Some(mut server_instance) = server_instance_media {
+                            server_instance.run();
+                        }
+                    },
+                    ServerType::Text => {
+                        if let Some(mut server_instance) = server_instance_text {
+                            server_instance.run();
+                        }
+                    }
+                    ServerType::Undefined => panic!("what?")
+                }
+            );
         }
     }
 

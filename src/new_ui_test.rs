@@ -272,9 +272,9 @@ impl<'a> UI<'a> {
     }
 
     fn print_servers(&mut self, _client_id: ClientId) {
-        println!("1. Server 8");
-        println!("2. Server 14");
-        println!("3. Server 17");
+        println!("1. Communication server 8");
+        println!("2. Media server 14");
+        println!("3. Text server 17");
         println!("0. Go back");
 
         // if let Some(servers) = self.servers.get(&client_id) {
