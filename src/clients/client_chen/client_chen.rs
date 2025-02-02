@@ -62,8 +62,6 @@ impl TraitClient for ClientChen {
             // Communication-related data
             communication: CommunicationInfo {
                 connected_nodes_ids: connected_nodes,
-                registered_communication_servers: HashMap::new(),
-                registered_content_servers: HashSet::new(),
                 routing_table: HashMap::new(),
             },
 
@@ -80,8 +78,6 @@ impl TraitClient for ClientChen {
                 //irresolute_path_traces: HashMap::new(),
                 fragment_assembling_buffer: HashMap::new(),
                 output_buffer: HashMap::new(),
-                input_packet_disk: HashMap::new(),   //if at the end of the implementation still doesn't need then delete
-                output_packet_disk: HashMap::new(),  //if at the end of the implementation still doesn't need then delete
                 packets_status: HashMap::new(),
                 message_chat: HashMap::new(),
                 current_list_file: Vec::new(),
@@ -150,9 +146,7 @@ pub(crate) struct NodeStatus {
 #[derive(Clone)]
 pub(crate) struct CommunicationInfo {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
-    pub(crate) registered_communication_servers: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
-    pub(crate) registered_content_servers: HashSet<ServerId>,
-    pub(crate) routing_table: HashMap<NodeId, HashMap<Vec<NodeId>, UsingTimes>>, // Routing information per protocol
+    pub(crate) routing_table: HashMap<NodeId, Vec<NodeId>>, // Routing information per protocol
 }
 
 // Tools for communication
@@ -172,8 +166,6 @@ pub struct NodeStorage {
 
     pub(crate) fragment_assembling_buffer: HashMap<SessionId, HashMap<FragmentIndex, Packet>>, // Temporary storage for recombining fragments
     pub(crate) output_buffer: HashMap<SessionId, HashMap<FragmentIndex, Packet>>,              // Buffer for outgoing messages
-    pub(crate) input_packet_disk: HashMap<SessionId, HashMap<FragmentIndex, Packet>>,          // Storage for received packets
-    pub(crate) output_packet_disk: HashMap<SessionId, HashMap<FragmentIndex, Packet>>,         // Storage for sent packets
     pub(crate) packets_status: HashMap<SessionId, HashMap<FragmentIndex, PacketStatus>>,       // Map every packet with the status of sending
     pub(crate) message_chat: HashMap<ClientId, Vec<(Speaker, Message)>>,               // Chat messages with other clients
     pub(crate) current_list_file: Vec<String>,                                  // Files received from media servers

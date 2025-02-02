@@ -8,4 +8,3 @@ pub mod impl_server_query;
 pub mod impl_packet_response_handler;
 pub mod impl_flooding_packets_handler;
 pub mod impl_communication_tools;
-pub mod impl_client_events;

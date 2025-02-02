@@ -3,7 +3,7 @@ use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
 
 impl PacketResponseHandler for ClientChen {
-    fn handle_ack(&mut self, ack_packet: Packet, ack: &Ack) {
+    fn handle_ack(&mut self, _ack_packet: Packet, ack: &Ack) {
         let session_id = self.status.session_id;
         let fragment_index = ack.fragment_index;
 
@@ -35,7 +35,7 @@ impl PacketResponseHandler for ClientChen {
     }
 
 
-    fn handle_error_in_routing(&mut self, node_id: NodeId, nack_packet: Packet, nack: &Nack) {
+    fn handle_error_in_routing(&mut self, node_id: NodeId, _nack_packet: Packet, nack: &Nack) {
         // Clean up packet_send connection
         if self.communication_tools.packet_send.remove(&node_id).is_some() {
             warn!("Removed broken connection to node {} from packet_send", node_id);
@@ -62,14 +62,11 @@ impl PacketResponseHandler for ClientChen {
                 if let Some(destination) = opt_destination {
                     let pack = match self.communication.routing_table.get(&destination) {
                         Some(routes) => {
-                            if routes.contains_key(&packet.routing_header.hops) {
-                                //do flooding because if there is still the wrong path in the routing table
-                                //means that the routing table is not cleared up and therefore the
-                                //flooding is not initiated
+                            if routes.clone() == packet.routing_header.hops {
+                                //still the wrong path memorized
                                 self.do_flooding();
                                 None
                             } else if !routes.is_empty() {
-                                // Limit the scope of the mutable borrow here
                                 let source_routing_header = self.get_source_routing_header(destination);
                                 if let Some(srh) = source_routing_header {
                                     packet.routing_header = srh; // Perform the update
@@ -83,35 +80,36 @@ impl PacketResponseHandler for ClientChen {
                         }
                         None => None,
                     };
-                    pack
+                    pack  // packet_to_send
                 } else {
-                    None
+                    None // packet_to_send
                 }
             } else {
-                warn!(
-            "Packet not found in output buffer (Session: {}, Fragment: {})",
-            session_id, fragment_index
-        );
+                warn!("Packet not found in output buffer (Session: {}, Fragment: {})", session_id, fragment_index);
                 None
             }
         };
-        // Second mutable borrow for sending (after first borrow is dropped)
+
+        // Send the packet when conditions are satisfied
         if let Some(p) = packet_to_send {
             self.send(p);
         }
     }
-    fn handle_destination_is_drone(&mut self, nack_packet: Packet, nack: &Nack) {
+    fn handle_destination_is_drone(&mut self, _nack_packet: Packet, nack: &Nack) {
         self.update_packet_status(self.status.session_id, nack.fragment_index, PacketStatus::NotSent(NotSentType::DroneDestination));
         self.storage.output_buffer.remove(&self.status.session_id);
         //the post-part of the handling is in the send_packets_in_buffer_checking_status
     }
-    fn handle_packdrop(&mut self, nack_packet: Packet, nack: &Nack) {
+    fn handle_packdrop(&mut self, _nack_packet: Packet, nack: &Nack) {
         self.update_packet_status(self.status.session_id, nack.fragment_index, PacketStatus::NotSent(NotSentType::Dropped));
-        let packet = self.storage.output_buffer.get_mut(&self.status.session_id).unwrap().get(&nack.fragment_index).unwrap().clone();
-        self.send(packet);
+        if let Some(entry) = &mut self.storage.output_buffer.get(&self.status.session_id){
+            if let Some(packet) = entry.get(&nack.fragment_index) {
+                self.send(packet.clone());
+            }
+        }
     }
 
-    fn handle_unexpected_recipient(&mut self, node_id: NodeId, nack_packet: Packet, nack: &Nack) {
+    fn handle_unexpected_recipient(&mut self, node_id: NodeId, _nack_packet: Packet, nack: &Nack) {
         info!("unexpected recipient found {}", node_id);
         let session_id = self.status.session_id;
         let fragment_index = nack.fragment_index;
@@ -132,14 +130,11 @@ impl PacketResponseHandler for ClientChen {
                 if let Some(destination) = opt_destination {
                     let pack = match self.communication.routing_table.get(&destination) {
                         Some(routes) => {
-                            if routes.contains_key(&packet.routing_header.hops) {
-                                //do flooding because if there is still the wrong path in the routing table
-                                //means that the routing table is not cleared up and therefore the
-                                //flooding is not initiated
+                            if routes.clone() == packet.routing_header.hops {
+                                //still the wrong path memorized
                                 self.do_flooding();
                                 None
                             } else if !routes.is_empty() {
-                                // Limit the scope of the mutable borrow here
                                 let source_routing_header = self.get_source_routing_header(destination);
                                 if let Some(srh) = source_routing_header {
                                     packet.routing_header = srh; // Perform the update
@@ -153,19 +148,17 @@ impl PacketResponseHandler for ClientChen {
                         }
                         None => None,
                     };
-                    pack
+                    pack  // packet_to_send
                 } else {
-                    None
+                    None // packet_to_send
                 }
             } else {
-                warn!(
-            "Packet not found in output buffer (Session: {}, Fragment: {})",
-            session_id, fragment_index
-        );
+                warn!("Packet not found in output buffer (Session: {}, Fragment: {})", session_id, fragment_index);
                 None
             }
         };
-        // Second mutable borrow for sending (after first borrow is dropped)
+
+        // Send the packet when conditions are satisfied
         if let Some(p) = packet_to_send {
             self.send(p);
         }

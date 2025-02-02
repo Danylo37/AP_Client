@@ -58,16 +58,17 @@ impl Sending for ClientChen {
         }
     }
 
-    fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, mut packet: Packet) {
-        // Update routing metrics
-        //eprintln!("We are sending the flood response to {}", target_node_id);
-        if let Some(destination) = packet.routing_header.destination() {
-            if let Some(routes) = self.communication.routing_table.get_mut(&destination) {
-                routes.entry(packet.clone().routing_header.hops)
-                    .and_modify(|using_times| *using_times += 1);
+    fn send_query_by_routing_header(&mut self, source_routing_header: SourceRoutingHeader, query: Query) {
+        if let Some(query_packets) = self.msg_to_fragments_by_routing_header(query, source_routing_header) {
+            for query_packet in query_packets {
+                self.send(query_packet);
             }
+        } else {
+            warn!("Failed to fragment query");
         }
+    }
 
+    fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, mut packet: Packet) {
         // Store packet with proper nested structure
         let (session_id, fragment_index) = match &packet.pack_type {
             PacketType::MsgFragment(fragment) => (packet.session_id, fragment.fragment_index),
@@ -75,11 +76,6 @@ impl Sending for ClientChen {
         };
 
         self.storage.output_buffer
-            .entry(session_id)
-            .or_default()
-            .insert(fragment_index, packet.clone());
-
-        self.storage.output_packet_disk
             .entry(session_id)
             .or_default()
             .insert(fragment_index, packet.clone());

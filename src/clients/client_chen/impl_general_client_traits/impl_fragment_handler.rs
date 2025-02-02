@@ -6,11 +6,6 @@ use crate::clients::client_chen::web_browser_client_traits::WebBrowserClientTrai
 
 impl FragmentsHandler for ClientChen {
     fn handle_fragment(&mut self, msg_packet: Packet, fragment: &Fragment) {
-        self.decreasing_using_times_when_receiving_packet(&msg_packet);
-        self.storage.input_packet_disk
-            .entry(msg_packet.session_id)
-            .or_insert_with(HashMap::new)
-            .insert(fragment.fragment_index, msg_packet.clone());
         self.storage.fragment_assembling_buffer
             .entry(msg_packet.session_id)
             .or_insert_with(HashMap::new)
@@ -101,50 +96,31 @@ impl FragmentsHandler for ClientChen {
 
     fn process_message(&mut self, initiator_id: NodeId, message: Response) {
         match message {
-            Response::ServerType(server_type) => self.update_topology_entry_for_server(initiator_id, server_type),
-            Response::ClientRegistered => self.register_client(initiator_id),
+            Response::ServerType(server_type) => {
+                self.update_topology_entry_for_server(initiator_id, server_type);
+                println!("The type of the server is {:?}", server_type);
+            },
             Response::MessageFrom(client_id, message) => {
                 self.storage
                     .message_chat
                     .entry(client_id)
                     .or_insert_with(Vec::new)
                     .push((Speaker::HimOrHer, message));
-            }
-            Response::ListClients(list_users) => {
-                self.communication
-                    .registered_communication_servers
-                    .insert(initiator_id, list_users);
-            }
+            },
             Response::ListFiles(list_file)  => {
                 // Placeholder for file/media handling
                 self.handle_list_file(list_file);
-            }
-
+            },
             Response::File(text) => {
                 self.handle_text_file(text);
-            }
+            },
             Response::Media(media) =>{
                 self.handle_media(media);
-            }
+            },
             Response::Err(error) => {
                 warn!("Error received: {:?}", error);
-            }
-        }
-    }
-
-    fn register_client(&mut self, initiator_id: NodeId) {
-        if let SpecificInfo::ServerInfo(ref mut server_info) = self.network_info.topology.entry(initiator_id).or_default().specific_info {
-            match server_info.server_type {
-                ServerType::Communication => {
-                    self.communication
-                        .registered_communication_servers
-                        .insert(initiator_id, vec![self.metadata.node_id]);
-                }
-                ServerType::Text | ServerType::Media => {
-                    self.communication.registered_content_servers.insert(initiator_id);
-                }
-                _ => {}
-            }
+            },
+            _=> {}
         }
     }
 
