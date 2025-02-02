@@ -10,6 +10,7 @@ pub struct UI<'a> {
     response_recv: Receiver<Response>,
     clients: HashMap<ClientId, Vec<ClientId>>,
     servers: HashMap<ClientId, Vec<(ServerId, ServerType, bool)>>,
+    files: Vec<String>,
 }
 
 impl<'a> UI<'a> {
@@ -19,6 +20,7 @@ impl<'a> UI<'a> {
             response_recv,
             clients: HashMap::new(),
             servers: HashMap::new(),
+            files: Vec::new(),
         }
     }
 
@@ -380,6 +382,7 @@ impl<'a> UI<'a> {
                 match response {
                     Response::ListFiles(list) => {
                         println!("Files list {:?}", list);
+                        self.files = list;
                     }
                     _ => {
                         println!("Unexpected response");
@@ -423,6 +426,37 @@ impl<'a> UI<'a> {
                 eprintln!("Error receiving response: {}", err);
             }
         }
+    }
+
+    fn choose_file(&mut self) -> Option<String> {
+        let mut stay_inside = true;
+        while stay_inside {
+            self.print_files();
+
+            println!("\nWhich file do you want to ask?");
+            let user_choice = Self::ask_input_user();
+
+            match user_choice {
+                x if (0..=self.files.len()).contains(&(x-1)) => {
+                    return Some(self.files[user_choice-1].clone());
+                }
+                0 => return None,
+                _ => println!("Not a valid option, choose again")
+            }
+        }
+        None
+    }
+
+    fn print_files(&mut self,) {
+        if self.files .is_empty() {
+            println!("\nNo servers available");
+            return;
+        }
+
+        for (i, file) in self.files .iter().enumerate() {
+            print!("{}. {}", i+1, file);
+        }
+        println!("0. Go back");
     }
 
     fn ask_media(&mut self, client_id: NodeId) {

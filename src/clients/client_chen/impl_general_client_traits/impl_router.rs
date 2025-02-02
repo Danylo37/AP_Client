@@ -55,6 +55,8 @@ impl Router for ClientChen {
     }
 
     fn update_topology_entry_for_server(&mut self, initiator_id: NodeId, server_type: ServerType) {
+        self.ui_response_send.send(Response::ServerType(server_type)).unwrap();     // todo remove this line
+
         if let SpecificInfo::ServerInfo(server_info) = &mut self
             .network_info
             .topology
