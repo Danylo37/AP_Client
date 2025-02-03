@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::time::Duration;
 use wg_2024::network::NodeId;
+use wg_2024::packet::NodeType;
 
 pub struct UI<'a> {
     controller: &'a mut SimulationController,
@@ -12,6 +13,7 @@ pub struct UI<'a> {
     clients: HashMap<ClientId, Vec<ClientId>>,
     servers: HashMap<ClientId, Vec<(ServerId, ServerType, bool)>>,
     files: Vec<String>,
+    drones: Vec<NodeId>,
 }
 
 impl<'a> UI<'a> {
@@ -22,6 +24,7 @@ impl<'a> UI<'a> {
             clients: HashMap::new(),
             servers: HashMap::new(),
             files: Vec::new(),
+            drones: Vec::new(),
         }
     }
 
@@ -30,7 +33,7 @@ impl<'a> UI<'a> {
             println!(
                 "\nChoose an option\n\
                 1. Use clients\n\
-                2. Crashing a drone\n\
+                2. Crash drone\n\
                 0. Exit"
             );
             let user_choice = Self::ask_input_user();
@@ -273,8 +276,7 @@ impl<'a> UI<'a> {
     }
 
     fn choose_server(&mut self, client_id: NodeId) -> Option<NodeId> {
-        let mut stay_inside = true;
-        while stay_inside {
+        loop {
             self.print_servers(client_id);
 
             println!("\nWhich server do you want to choose?");
@@ -291,7 +293,6 @@ impl<'a> UI<'a> {
                 _ => println!("Not a valid option, choose again")
             }
         }
-        None
     }
 
     fn print_servers(&mut self, _client_id: ClientId) {
@@ -340,7 +341,7 @@ impl<'a> UI<'a> {
                 return;
             }
 
-            println!("\nWhich client do you want to send the message to?");
+            println!("\nChoose recipient client:");
             for (i, client) in clients_ids.iter().enumerate(){
                 println!("{}. Client {}", i+1, client);
             }
@@ -452,11 +453,10 @@ impl<'a> UI<'a> {
     }
 
     fn choose_file(&mut self) -> Option<String> {
-        let mut stay_inside = true;
-        while stay_inside {
+        loop {
             self.print_files();
 
-            println!("\nWhich file do you want to ask?");
+            println!("\nChoose file to request:");
             let user_choice = Self::ask_input_user();
 
             match user_choice {
@@ -467,16 +467,15 @@ impl<'a> UI<'a> {
                 _ => println!("Not a valid option, choose again")
             }
         }
-        None
     }
 
     fn print_files(&mut self,) {
-        if self.files .is_empty() {
+        if self.files.is_empty() {
             println!("\nNo servers available");
             return;
         }
 
-        for (i, file) in self.files .iter().enumerate() {
+        for (i, file) in self.files.iter().enumerate() {
             println!("{}. {}", i+1, file);
         }
         println!("0. Go back");
@@ -516,7 +515,52 @@ impl<'a> UI<'a> {
     }
 
     fn crash_drone(&mut self) {
-        println!("Crush drone 15");
-        self.controller.request_drone_crash(15).unwrap()
+        let Some((drone_id, index)) = self.choose_drone() else {
+            return;
+        };
+
+        println!("Crashing drone {}", drone_id);
+        self.controller.request_drone_crash(drone_id).unwrap();
+        self.drones.remove(index);
+    }
+
+    fn choose_drone(&mut self) -> Option<(NodeId, usize)> {
+        if self.drones.is_empty() {
+            self.drones = self.controller
+                .state
+                .nodes
+                .clone()
+                .iter()
+                .filter(|(_, node_type)| **node_type == NodeType::Drone)
+                .map(|(node_id, _)| *node_id)
+                .collect();
+        }
+
+        loop {
+            self.print_drones();
+
+            println!("\nChoose drone to crash:");
+            let user_choice = Self::ask_input_user();
+
+            match user_choice {
+                0 => return None,
+                x if (0..=self.drones.len()).contains(&(x-1)) => {
+                    return Some((self.drones[user_choice-1].clone(), user_choice-1));
+                }
+                _ => println!("Not a valid option, choose again")
+            }
+        }
+    }
+
+    fn print_drones(&mut self,) {
+        if self.drones.is_empty() {
+            println!("\nNo drones found");
+            return;
+        }
+
+        for (i, id) in self.drones.iter().enumerate() {
+            println!("{}. Drone {}", i+1, id);
+        }
+        println!("0. Go back");
     }
 }

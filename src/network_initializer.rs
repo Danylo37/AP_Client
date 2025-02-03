@@ -1,30 +1,28 @@
 use std::collections::HashMap;
 
-use std::{env, fs, thread};
 use crossbeam_channel::*;
+use std::{env, fs, thread};
 
 use wg_2024::{
-    packet::{Packet, NodeType},
-    config::{Config,Drone,Server,Client},
-    controller::{DroneEvent},
+    config::{Client, Config, Drone, Server},
+    controller::DroneEvent,
     network::NodeId,
+    packet::{NodeType, Packet},
 };
 
-use wg_2024::drone::Drone as TraitDrone;
-use krusty_drone::KrustyCrapDrone;
-use rand::random;
-use crate::servers;
 use crate::servers::server::Server as ServerTrait;
+use krusty_drone::KrustyCrapDrone;
+use wg_2024::drone::Drone as TraitDrone;
 
 use crate::clients;
 use crate::clients::Client as ClientTrait;
-use crate::general_use::{ClientCommand, ClientEvent, ClientType, Response, ServerCommand, ServerEvent, ServerType};
-use crate::simulation_controller::SimulationController;
-use crate ::new_ui_test::UI;
+use crate::general_use::{ClientCommand, ClientEvent, ClientType, Response, ServerEvent, ServerType};
+use crate::new_ui_test::UI;
 use crate::servers::communication_server::CommunicationServer;
 use crate::servers::content;
 use crate::servers::media_server::MediaServer;
 use crate::servers::text_server::TextServer;
+use crate::simulation_controller::SimulationController;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
@@ -171,7 +169,7 @@ impl NetworkInit {
             let copy_ui_response_sender = ui_response_sender.clone();
 
 
-            if counter % 3 == 0 {
+            if counter % 2 == 0 {
                 controller.register_client(client.id,to_client_command_sender, ClientType::Web);
 
                 thread::spawn(move || {
@@ -206,8 +204,7 @@ impl NetworkInit {
 
     /// SERVERS GENERATION
 
-    fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, to_contr_event: Sender<ServerEvent> ) {
-        let mut text_server_used = false;
+    fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, _to_contr_event: Sender<ServerEvent> ) {
         let mut vec_files = Vec::new();
 
         for server in config_server {
